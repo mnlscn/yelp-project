@@ -84,3 +84,15 @@ ON business_tb.business_id = tips_tb.business_id
 WHERE business_tb.city LIKE 'Phoenix' and business_tb.categories LIKE '%Restaurant%'
 GROUP BY business_tb.business_id
 ORDER BY COUNT(*) DESC;
+
+ #----------------------------------------
+
+ # Get users that wrote reviews on Phoenix's restaurants
+
+SELECT users_tb.*
+FROM public5.businesstable AS business_tb
+JOIN public5.reviewtable AS review_tb
+ON business_tb.business_id = review_tb.business_id
+JOIN public5.userstable AS users_tb
+ON review_tb.user_id = users_tb.user_id
+WHERE business_tb.city LIKE 'Phoenix' and business_tb.categories LIKE '%Restaurant%';
