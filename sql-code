@@ -43,3 +43,44 @@ ON business_tb.business_id = review_tb.business_id
 WHERE business_tb.city LIKE 'Phoenix' and business_tb.categories LIKE '%Restaurant%'
 GROUP BY business_tb.business_id
 ORDER BY COUNT(review_tb.review_id) DESC;
+
+
+#--------------------------------------------
+
+# Get photos of Phoenix's restaurants
+
+SELECT business_tb.city, photo_tb.photo_id, business_tb.business_id, photo_tb.caption, photo_tb.label 
+FROM public5.businesstable AS business_tb
+INNER JOIN public5.phototable AS photo_tb
+ON business_tb.business_id = photo_tb.business_id
+WHERE business_tb.city LIKE 'Phoenix' and business_tb.categories LIKE '%Restaurant%';
+
+# (Optional) Number of pictures per Phoenix's rest.
+
+SELECT business_tb.business_id, COUNT(photo_tb.photo_id) 
+FROM public5.businesstable AS business_tb
+INNER JOIN public5.phototable AS photo_tb
+ON business_tb.business_id = photo_tb.business_id
+WHERE business_tb.city LIKE 'Phoenix' and business_tb.categories LIKE '%Restaurant%'
+GROUP BY business_tb.business_id
+ORDER BY COUNT(photo_tb.photo_id) DESC;
+
+#-------------------------------------
+
+# Get tips of Phoenix's restaurants
+
+SELECT business_tb.city, tips_tb.user_id, business_tb.business_id, tips_tb.compliment_count, tips_tb.date, tips_tb.text
+FROM public5.businesstable AS business_tb
+INNER JOIN public5.tipstable AS tips_tb
+ON business_tb.business_id = tips_tb.business_id
+WHERE business_tb.city LIKE 'Phoenix' and business_tb.categories LIKE '%Restaurant%';
+
+# (Optional) Number of tips per restaurant
+
+SELECT business_tb.business_id, COUNT(*)
+FROM public5.businesstable AS business_tb
+INNER JOIN public5.tipstable AS tips_tb
+ON business_tb.business_id = tips_tb.business_id
+WHERE business_tb.city LIKE 'Phoenix' and business_tb.categories LIKE '%Restaurant%'
+GROUP BY business_tb.business_id
+ORDER BY COUNT(*) DESC;
