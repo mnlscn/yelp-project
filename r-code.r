@@ -1,7 +1,4 @@
 # Libraries
-library(visdat)
-library(skimr)
-library(DataExplorer)
 library(corrplot)
 library(dplyr)
 library(doParallel)
@@ -253,7 +250,9 @@ x.evaluate$correctNB <- x.evaluate$predictionNBclass == x.evaluate$ch_in_string
 print(paste("% of predicted classifications correct", mean(x.evaluate$correctNB)))
 
 # the variable importance
-print(varImp(x.modelNB))
+imp_NB <- (varImp(x.modelNB))
+plot(imp_NB, main='NB MODEL')
+
 
 # Extract the class probabilities.
 x.evaluate$predictionNB <- x.evaluate$predictionNB[,'ch_in']
@@ -283,7 +282,11 @@ x.evaluate$correctKNN <- x.evaluate$predictionKNNclass == x.evaluate$ch_in_strin
 print(paste("% of predicted classifications correct", mean(x.evaluate$correctKNN)))
 
 # the variable importance
-print(varImp(x.modelKNN))
+imp_KNN <- (varImp(x.modelKNN))
+plot(imp_KNN, main="KNN MODEL")
+
+
+
 
 # Extract the class probabilities.
 x.evaluate$predictionKNN <- x.evaluate$predictionKNN[,'ch_in']
@@ -316,7 +319,10 @@ x.evaluate$correctSVM <- x.evaluate$predictionSVMclass == x.evaluate$ch_in_strin
 print(paste("% of predicted classifications correct", mean(x.evaluate$correctSVM)))
 
 # for fast trainer you can also get the variable importance
-print(varImp(x.modelSVM))
+
+imp_SVM <- (varImp(x.modelSVM))
+plot(x.modelSVM, main="SVM MODEL")
+
 
 # Extract the class probabilities.
 x.evaluate$predictionSVM <- x.evaluate$predictionSVM[,'ch_in']
@@ -351,7 +357,9 @@ x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]<=probthres]="
 x.evaluate$correctNNet <- x.evaluate$predictionNNetclass == x.evaluate$ch_in_string
 print(paste("% of predicted classifications correct", mean(x.evaluate$correctNNet)))
 
-print(varImp(x.modelNNet))
+imp_NNet<- (varImp(x.modelNNet))
+plot(imp_NNet, main="NNet MODEL")
+
 # plot NNet
 if(0){
   NeuralNetTools::plotnet(x.modelNNet$finalModel)
@@ -391,7 +399,8 @@ print(paste("% of predicted classifications correct", mean(x.evaluate$correctTre
 x.evaluate$predictionTree <- x.evaluate$predictionTree[,"ch_in"]
 
 # to see the importance of the variables
-print(varImp(x.modelTree))
+imp_Tree <- (varImp(x.modelTree))
+plot(imp_Tree, main="TREE MODEL")
 
 # plot tree, if desired 
 if(0){
@@ -435,7 +444,9 @@ print(paste("% of predicted classifications correct", mean(x.evaluate$correctBag
 x.evaluate$predictionBagging <- x.evaluate$predictionBagging[,"ch_in"]
 
 # to see the importance of the variables
-print(varImp(x.modelBagging))
+imp_Bagging <- (varImp(x.modelBagging))
+plot(imp_Bagging, main="BAGGING MODEL")
+
 
 BaggingOutput <- makeLiftPlot(x.evaluate$predictionBagging,x.evaluate,"Bagging")
 
@@ -475,7 +486,9 @@ print(paste("% of predicted classifications correct", mean(x.evaluate$correctBoo
 x.evaluate$predictionBoosting <- x.evaluate$predictionBoosting[,"ch_in"]
 
 # to see the importance of the variables
-print(varImp(x.modelBoosting))
+imp_Boosting <- (varImp(x.modelBoosting))
+plot(imp_Boosting, main="BOOSTING MODEL")
+
 
 # Make a lift curve
 BoostingOutput <- makeLiftPlot(x.evaluate$predictionBoosting,x.evaluate,"Boosting")
@@ -516,7 +529,8 @@ print(paste("% of predicted classifications correct", mean(x.evaluate$correctRF)
 x.evaluate$predictionRF <- x.evaluate$predictionRF[,"ch_in"]
 
 # to see the importance of the variables
-print(varImp(x.modelRF))
+imp_RF <- (varImp(x.modelRF))
+plot(imp_RF, main="RANDOM FOREST MODEL")
 
 RFOutput <- makeLiftPlot(x.evaluate$predictionRF,x.evaluate,"Random Forest")
 
@@ -637,11 +651,3 @@ plot(roc_rfopt,col="blue",print.auc=TRUE,add=TRUE)
 
 
 
-
-
-####### VARIABLE EXPLANATION #########
-
-#another way of a graphical solution with package vip
-#install.packages("vip")
-library(vip) 
-vip(rf, bar = TRUE, horizontal = FALSE, size = 1.5)
