@@ -1,4 +1,7 @@
 # Libraries
+library(visdat)
+library(skimr)
+library(DataExplorer)
 library(corrplot)
 library(dplyr)
 library(doParallel)
@@ -120,22 +123,24 @@ corrplot(correlation.matrix, method="color", type="upper",tl.col = "black",)
 
 
 ####### STEPWISE VARIABLE SELECTION ########
-# It takes a lot of time
+# It takes a lot of time. Be careful
 
-# library(MASS)
-# 
-# # Specify your initial full model with all potential predictor variables
-# full_model <- glm(ch_in~-ch_in_string, data = yelp_data, family = binomial)
-# 
-# # Perform stepwise variable selection using AIC
-# stepwise_model <- stepAIC(full_model, direction = "both")
-# 
-# # View the selected variables in the final model
-# selected_variables <- stepwise_model$anova$terms
-# print(selected_variables)
+library(MASS)
+
+# Specify your initial full model with all potential predictor variables
+full_model <- glm(ch_in~.-ch_in_string, data = yelp_data, family = binomial)
+
+# Perform stepwise variable selection using AIC
+stepwise_model <- stepAIC(full_model, direction = "both")
+
+# View the selected variables in the final model
+selected_variables <- stepwise_model$anova$terms
+print(selected_variables)
 
 
 # A simple regression analysis ----
+# Just to do diagnostic
+
 m1=glm(ch_in~cum_n_tips+cum_max_friends+cum_max_us_fans+cum_max_us_tip+I((male+1)/(female+1))+
          business_price+business_park+business_open+business_cat+n_photo+
          PRCP+SNOW+SNWD+TMAX+TMIN+TOBS_3+Quarter+weekend, data = yelp_data, family = "binomial")
