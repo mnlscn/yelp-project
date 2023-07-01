@@ -1,7 +1,4 @@
 # Libraries
-library(visdat)
-library(skimr)
-library(DataExplorer)
 library(corrplot)
 library(dplyr)
 library(doParallel)
@@ -70,7 +67,7 @@ physical_attr <- c("ch_in","business_price", "business_open", "business_park","b
 
 social_attr <- c("ch_in","cum_n_tips","cum_max_friends","cum_max_u_elite","cum_max_us_fans","cum_max_us_tip"
                 ,"stars","review_count.x","avg_sentiment_score_review","sum_elite_status","max_friends_count"
-                ,"male","female","sum_fans","avg_stars")
+                ,"male","female","sum_fans","avg_stars","num_male","num_female")
 
 external_attr <- c("ch_in","business_lat","business_long","PRCP","SNOW","SNWD","TMAX",
                    "TMIN","TOBS","TOBS_1","TOBS_2","TOBS_3","TOBS_4","Quarter","weekend")
@@ -463,6 +460,48 @@ Baggingconfmatrix <- table(x.evaluate$predictionBaggingClass,x.evaluate$ch_in_st
 rm(TimeAux)
 stopCluster(cl)
 
+############ TUNING BAGGING ##########
+
+
+library(ipred)
+set.seed(1234) # fix random number generator seed for reproducibility
+
+bagging.tuning <- tune.bagging(BaseFormula_dum,
+                               data = x.trainnorm,
+                               nbagg = 100,       # number of bootstrap samples
+                               splitfrac = 0.5,   # fraction of variables for splitting
+                               minsplit = 1,      # minimum node size
+                               minsize = 1,       # minimum size of terminal nodes
+                               bagging.cv = TRUE) # enable cross-validation
+
+bagging.tuning
+
+# Use the tuning results to re-run the model
+# Take the results of bagging.tuning and put them in the model below, I'm using some random settings
+
+set.seed(1234) # fix random number generator seed for reproducibility
+bagging_opt <- bagging(BaseFormula_dum, data = x.trainnorm,
+                       nbagg = 100,       # number of bootstrap samples
+                       splitfrac = 0.5,   # fraction of variables for splitting
+                       minsplit = 1,      # minimum node size
+                       minsize = 1)       # minimum size of terminal nodes
+
+# Add predictions to the evaluation data
+x.evaluatenorm$pred_bagging_opt <- predict(bagging_opt, newdata = x.evaluatenorm, type = "prob")
+
+#### now let's calculate the forecast and check the AUC of both versions
+x.evaluatenorm$pred_bagging <- predict(bagging, newdata = x.evaluatenorm, type = "prob")
+
+summary(x.evaluatenorm$pred_bagging)
+summary(x.evaluatenorm$pred_bagging_opt)
+
+### Compare models with ROC 
+roc_bagging <- roc(x.evaluatenorm$ch_in, x.evaluatenorm, percent = TRUE, plot = TRUE, print.auc = TRUE, grid = TRUE)
+roc_bagging_opt <- roc(x.evaluatenorm$ch_in, x.evaluatenorm$pred_bagging_opt, percent = TRUE, plot = TRUE, print.auc = TRUE, grid = TRUE)
+
+plot(roc_bagging, col = "red", print.auc = TRUE)
+plot(roc_bagging_opt, col = "blue", print.auc = TRUE, add = TRUE)
+
 
 
 ############ Boosting
@@ -547,6 +586,57 @@ RFconfmatrix <- table(x.evaluate$predictionRFClass,x.evaluate$ch_in_string)
 rm(TimeAux)
 stopCluster(cl)
 
+################ TUNING RF ################
+
+library(randomForest)
+# let'S use e1071: a more flexible algorithm for RF tuning
+library(e1071)
+nodesize.tuning <- c(50,100,200)
+ntree.tuning <- c(200,500,1000)
+set.seed(1234) # fix random number generator seed for reproducibility
+
+rf.tuning <- tune.randomForest(BaseFormula_dum, 
+                               data=x.trainnorm, 
+                               replace=TRUE, 
+                               sampsize=40000,  
+                               mtry=2,
+                               nodesize=nodesize.tuning,
+                               ntree = ntree.tuning)
+rf.tuning
+
+# Use the tuning results to re-run the model
+# Take the results of rf.tuning and put in the model below, I'm putting some random setting
+
+set.seed(1234) # fix random number generator seed for reproducibility
+rf_opt <- randomForest(BaseFormula_dum, data=x.trainnorm, 
+                       ntree=500,       # number of trees
+                       mtry=2,          # number variables selected at each node
+                       nodesize=50,     # minimum node size
+                       maxnodes=3,     # max amount of nodes
+                       replace=TRUE,    # sample selection type
+                       sampsize=20000)   # size of each sample
+
+# Add prediction to validation data
+x.evaluatenorm$pred_rfopt <- predict(rf_opt,newdata=x.evaluatenorm, type="response", na.action=na.pass)
+
+
+#### now let's calculate the forecast and check the AUC of both versions
+x.evaluatenorm$pred_rf <- predict(rf_opt, newdata=x.evaluatenorm,type="response", na.action=na.pass)
+
+summary(x.evaluatenorm$pred_rf)
+summary(x.evaluatenorm$pred_rfopt)
+
+library(pROC) 
+### Compare models with ROC 
+roc_rf <- roc(x.evaluatenorm$ch_in,x.evaluatenorm, percent=TRUE, plot=TRUE, print.auc=TRUE,grid=TRUE)
+roc_rfopt <- roc(x.evaluatenorm$ch_in,x.evaluatenorm$pred_rfopt, percent=TRUE, plot=TRUE, print.auc=TRUE,grid=TRUE)
+
+plot(roc_rf,col="red",print.auc=TRUE)
+plot(roc_rfopt,col="blue",print.auc=TRUE,add=TRUE)
+
+
+
+
 
 # SOME Summarizing plots:
 
@@ -597,62 +687,7 @@ lift_obj=lift(ch_in_string~predictionBagging+predictionBoosting+predictionTree+p
 
 ggplot(lift_obj)
 
-stargazer(x.modelLogit,x.modelNB,x.modelKNN, title='comparison', align =TRUE)
 
-####### MODEL TUNING ####### (WORK IN PROGRESS)
-
-# Take the best model and tune it
-
-# Random Forest
-rf_grid <-expand.grid(.mtry=c(2,3,4)) # different settings of mtry can be tested
-training <- train(model, data=xsell_train, method="rf", ntree=500, sampsize=40000,  tuneGrid=rf_grid)
-training
-
-
-library(randomForest)
-# let'S use e1071: a more flexible algorithm for RF tuning
-library(e1071)
-nodesize.tuning <- c(50,100,200)
-ntree.tuning <- c(200,500,1000)
-set.seed(1234) # fix random number generator seed for reproducibility
-
-rf.tuning <- tune.randomForest(model, 
-                               data=xsell_train, 
-                               replace=TRUE, 
-                               sampsize=40000,  
-                               mtry=2,
-                               nodesize=nodesize.tuning,
-                               ntree = ntree.tuning)
-rf.tuning
-
-# Use the tuning results to re-run the model
-
-set.seed(1234) # fix random number generator seed for reproducibility
-rf_opt <- randomForest(model, data=xsell_train, 
-                       ntree=500,       # number of trees
-                       mtry=2,          # number variables selected at each node
-                       nodesize=50,     # minimum node size
-                       maxnodes=3,     # max amount of nodes
-                       replace=TRUE,    # sample selection type
-                       sampsize=20000)   # size of each sample
-
-# Add prediction to validation data
-xsell_valid$pred_rfopt <- predict(rf_opt,newdata=xsell_valid, type="response", na.action=na.pass)
-
-
-#### now lets calculate the forecast and check the AUC of both versions
-xsell_valid$pred_rf <- predict(rf, newdata=xsell_valid,type="response", na.action=na.pass)
-
-summary(xsell_valid$pred_rf)
-summary(xsell_valid$pred_rfopt)
-
-library(pROC) 
-### Compare models with ROC  Doing this, pls rund the "normal" RF model form session 6 and compare ####
-roc_rf <- roc(xsell_valid$xsell,xsell_valid$pred_rf, percent=TRUE, plot=TRUE, print.auc=TRUE,grid=TRUE)
-roc_rfopt <- roc(xsell_valid$xsell,xsell_valid$pred_rfopt, percent=TRUE, plot=TRUE, print.auc=TRUE,grid=TRUE)
-
-plot(roc_rf,col="red",print.auc=TRUE)
-plot(roc_rfopt,col="blue",print.auc=TRUE,add=TRUE)
 
 
 
