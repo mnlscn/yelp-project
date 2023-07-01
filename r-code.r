@@ -155,7 +155,7 @@ varsin=c("ch_in_string","ch_in","SNWD","Quarter","business_price","business_open
 yelp_data=subset(yelp_data,select=varsin)
 
 # set "/1" for full dataset size
-datasetsize=nrow(yelp_data)/10 # would you like to work only  on a subset of your data? 
+datasetsize=nrow(yelp_data)/15 # would you like to work only  on a subset of your data? 
 x <- yelp_data[sample(1:nrow(yelp_data), datasetsize, replace = F),]
 x.train <- x[1:floor(nrow(x)*.75), ]
 x.evaluate <- x[(floor(nrow(x)*.75)+1):nrow(x), ]
@@ -460,48 +460,6 @@ Baggingconfmatrix <- table(x.evaluate$predictionBaggingClass,x.evaluate$ch_in_st
 rm(TimeAux)
 stopCluster(cl)
 
-############ TUNING BAGGING ##########
-
-
-library(ipred)
-set.seed(1234) # fix random number generator seed for reproducibility
-
-bagging.tuning <- tune.bagging(BaseFormula_dum,
-                               data = x.trainnorm,
-                               nbagg = 100,       # number of bootstrap samples
-                               splitfrac = 0.5,   # fraction of variables for splitting
-                               minsplit = 1,      # minimum node size
-                               minsize = 1,       # minimum size of terminal nodes
-                               bagging.cv = TRUE) # enable cross-validation
-
-bagging.tuning
-
-# Use the tuning results to re-run the model
-# Take the results of bagging.tuning and put them in the model below, I'm using some random settings
-
-set.seed(1234) # fix random number generator seed for reproducibility
-bagging_opt <- bagging(BaseFormula_dum, data = x.trainnorm,
-                       nbagg = 100,       # number of bootstrap samples
-                       splitfrac = 0.5,   # fraction of variables for splitting
-                       minsplit = 1,      # minimum node size
-                       minsize = 1)       # minimum size of terminal nodes
-
-# Add predictions to the evaluation data
-x.evaluatenorm$pred_bagging_opt <- predict(bagging_opt, newdata = x.evaluatenorm, type = "prob")
-
-#### now let's calculate the forecast and check the AUC of both versions
-x.evaluatenorm$pred_bagging <- predict(bagging, newdata = x.evaluatenorm, type = "prob")
-
-summary(x.evaluatenorm$pred_bagging)
-summary(x.evaluatenorm$pred_bagging_opt)
-
-### Compare models with ROC 
-roc_bagging <- roc(x.evaluatenorm$ch_in, x.evaluatenorm, percent = TRUE, plot = TRUE, print.auc = TRUE, grid = TRUE)
-roc_bagging_opt <- roc(x.evaluatenorm$ch_in, x.evaluatenorm$pred_bagging_opt, percent = TRUE, plot = TRUE, print.auc = TRUE, grid = TRUE)
-
-plot(roc_bagging, col = "red", print.auc = TRUE)
-plot(roc_bagging_opt, col = "blue", print.auc = TRUE, add = TRUE)
-
 
 
 ############ Boosting
@@ -586,54 +544,69 @@ RFconfmatrix <- table(x.evaluate$predictionRFClass,x.evaluate$ch_in_string)
 rm(TimeAux)
 stopCluster(cl)
 
-################ TUNING RF ################
-
-library(randomForest)
-# let'S use e1071: a more flexible algorithm for RF tuning
-library(e1071)
-nodesize.tuning <- c(50,100,200)
-ntree.tuning <- c(200,500,1000)
-set.seed(1234) # fix random number generator seed for reproducibility
-
-rf.tuning <- tune.randomForest(BaseFormula_dum, 
-                               data=x.trainnorm, 
-                               replace=TRUE, 
-                               sampsize=40000,  
-                               mtry=2,
-                               nodesize=nodesize.tuning,
-                               ntree = ntree.tuning)
-rf.tuning
-
-# Use the tuning results to re-run the model
-# Take the results of rf.tuning and put in the model below, I'm putting some random setting
-
-set.seed(1234) # fix random number generator seed for reproducibility
-rf_opt <- randomForest(BaseFormula_dum, data=x.trainnorm, 
-                       ntree=500,       # number of trees
-                       mtry=2,          # number variables selected at each node
-                       nodesize=50,     # minimum node size
-                       maxnodes=3,     # max amount of nodes
-                       replace=TRUE,    # sample selection type
-                       sampsize=20000)   # size of each sample
-
-# Add prediction to validation data
-x.evaluatenorm$pred_rfopt <- predict(rf_opt,newdata=x.evaluatenorm, type="response", na.action=na.pass)
 
 
-#### now let's calculate the forecast and check the AUC of both versions
-x.evaluatenorm$pred_rf <- predict(rf_opt, newdata=x.evaluatenorm,type="response", na.action=na.pass)
+ ####### TUNING RF #######
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
 
-summary(x.evaluatenorm$pred_rf)
-summary(x.evaluatenorm$pred_rfopt)
 
-library(pROC) 
-### Compare models with ROC 
-roc_rf <- roc(x.evaluatenorm$ch_in,x.evaluatenorm, percent=TRUE, plot=TRUE, print.auc=TRUE,grid=TRUE)
-roc_rfopt <- roc(x.evaluatenorm$ch_in,x.evaluatenorm$pred_rfopt, percent=TRUE, plot=TRUE, print.auc=TRUE,grid=TRUE)
+paramGrid <- expand.grid(
+  mtry = c(2, 4, 6, 8),       # Number of variables selected at each node
+  ntree = c(100, 500, 1000, 15000) # Number of trees in the forest
+)
 
-plot(roc_rf,col="red",print.auc=TRUE)
-plot(roc_rfopt,col="blue",print.auc=TRUE,add=TRUE)
+ptm <- proc.time()
 
+# Perform hyperparameter tuning using tuneRF() function
+x.modelRF_tuned <- tuneRF(
+  subset(x.trainnorm, select = -ch_in),   # Training predictors (excluding the target variable)
+  y = x.trainnorm[["ch_in"]],             # Training target variable
+  mtryStart = 2,                          # Starting value of mtry
+  stepFactor = 2,                         # Step factor for mtry
+  improve = 0.01,                         # Minimum improvement in node purity
+  ntreeTry = 2,             # Number of trees to try
+  doBest = TRUE,                          # Choose the best model
+  importance = TRUE                       # Compute variable importance
+)
+
+best_mtry <- x.modelRF_tuned$mtry
+best_ntree <- x.modelRF_tuned$ntree
+
+
+# Create a model using "random forest and bagging ensemble algorithms
+# a fast trainer using parallel computation
+x.modelRF <- train(BaseFormula_dum, data=x.trainnorm, method="parRF", mtry=best_mtry, ntree=best_ntree) 
+
+# Use the model to predict the evaluation.
+x.evaluate$predictionRF <- predict(x.modelRF, newdata=x.evaluatenorm, type = "prob")
+
+x.evaluate$predictionRFClass[x.evaluate$predictionRF[,"ch_in"]>probthres]="ch_in"
+x.evaluate$predictionRFClass[x.evaluate$predictionRF[,"ch_in"]<=probthres]="Noch_in"
+
+x.evaluate$predictionRFClass <- factor(x.evaluate$predictionRFClass, levels=c("Noch_in","ch_in"))
+
+
+# Calculate the overall accuracy.
+x.evaluate$correctRF <- x.evaluate$predictionRFClass == x.evaluate$ch_in_string
+print(paste("% of predicted classifications correct", mean(x.evaluate$correctRF)))
+
+# Extract the class probabilities.
+x.evaluate$predictionRF <- x.evaluate$predictionRF[,"ch_in"]
+
+# to see the importance of the variables
+imp_RF <- (varImp(x.modelRF))
+plot(imp_RF, main="RANDOM FOREST MODEL")
+
+RFOutput <- makeLiftPlot(x.evaluate$predictionRF,x.evaluate,"Random Forest")
+
+TimeAux <- proc.time() - ptm 
+#RFOutput$summary <- varImp(x.modelRF)
+RFOutput$TimeElapsed <- TimeAux[3]
+RFOutput$PercCorrect <- mean(x.evaluate$correctRF)*100
+RFconfmatrix <- table(x.evaluate$predictionRFClass,x.evaluate$ch_in_string)
+rm(TimeAux)
+stopCluster(cl)
 
 
 
