@@ -155,7 +155,7 @@ varsin=c("ch_in_string","ch_in","SNWD","Quarter","business_price","business_open
 yelp_data=subset(yelp_data,select=varsin)
 
 # set "/1" for full dataset size
-datasetsize=nrow(yelp_data)/15 # would you like to work only  on a subset of your data? 
+datasetsize=nrow(yelp_data)/1 # would you like to work only  on a subset of your data? 
 x <- yelp_data[sample(1:nrow(yelp_data), datasetsize, replace = F),]
 x.train <- x[1:floor(nrow(x)*.75), ]
 x.evaluate <- x[(floor(nrow(x)*.75)+1):nrow(x), ]
