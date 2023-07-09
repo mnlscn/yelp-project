@@ -1,4 +1,4 @@
-# Extract restaurants in Phoenix (public5)
+# Extract restaurants in Phoenix (public5
 # Number observations: 4004
 
 SELECT * 
