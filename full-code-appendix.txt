@@ -1,0 +1,1868 @@
+# First we extract data from public. City of Akron period 2017.
+
+1) SQL code
+2) R code?
+
+##########################################################################################
+-- 1) SQL CODE - Extraction data from public 
+##########################################################################################
+
+-- This SQL code combines data from multiple tables to create a unified dataset for analysis.
+-- The resulting dataset includes information about businesses, check-ins, tips, and photos.
+-- combining review-checkins table with business and photo table
+SELECT t_ruc.business_id
+	,ch_in
+	,date_tip
+	,business_lat
+	,business_long
+	,business_park
+	,business_price
+	,business_open
+	,business_cat
+	,n_photo
+	,cum_n_tips
+	,cum_max_friends
+	,cum_u_names
+	,cum_max_u_elite
+	,cum_max_us_fans
+	,cum_max_us_tip
+FROM (
+	SELECT t_b.business_id1 AS business_id
+		,business_lat
+		,business_long
+		,business_park
+		,business_price
+		,business_open
+		,business_cat
+		,n_photo
+	FROM (
+		-- table1: for business
+		SELECT j->>'business_id' AS business_id1
+			,j->>'latitude' AS business_lat
+			,j->>'longitude' AS business_long
+			,(
+				CASE 
+					WHEN STRPOS(((j->>'attributes')::json) ->> 'BusinessParking', 'True') <> 0
+						THEN 'true'
+					ELSE 'false'
+					END
+				) AS business_park
+			,CAST(((j->>'attributes')::json) ->> 'RestaurantsPriceRange2' AS INTEGER) AS business_price
+			,j->>'is_open' AS business_open
+			,j->>'categories' AS business_cat
+		FROM business
+		WHERE STRPOS(j->>'categories', 'Restaurants') <> 0 AND j->>'city'='Akron'
+		) AS t_b
+	LEFT JOIN (
+		-- table2: for photos
+		SELECT j->>'business_id' AS business_id2
+			,COUNT(*) AS n_photo
+		FROM photo
+		GROUP BY business_id2
+		) AS t_p ON t_b.business_id1 = t_p.business_id2
+	) AS t_bp
+	,(
+	SELECT t_ru.business_id6 AS business_id
+			,(CASE WHEN t_ch.date3 IS NULL THEN 0 ELSE 1 END) AS ch_in
+			,t_ru.date6 AS date_tip
+			,t_ru.cum_n_tips AS cum_n_tips
+			,t_ru.cum_max_friends AS cum_max_friends
+			,t_ru.cum_u_names AS cum_u_names
+			,t_ru.cum_max_u_elite AS cum_max_u_elite
+			,t_ru.cum_max_us_fans AS cum_max_us_fans
+			,t_ru.cum_max_us_tip AS cum_max_us_tip
+		FROM (
+			-- table3: for checkins
+			SELECT t3_1.business_id AS business_id3
+				,date1::DATE AS date3
+			FROM (
+				SELECT checkin.j->>'business_id' AS business_id
+					,unnest(string_to_array(checkin.j->>'date', ',')) AS date1
+				FROM checkin, business
+				WHERE checkin.j->>'business_id' = business.j->>'business_id' AND business.j->>'city'='Akron'
+				) AS t3_1
+			GROUP BY business_id3
+				,date3
+			) AS t_ch
+		RIGHT JOIN (
+			-- table6.2: a much more elegant, but more complex query
+			SELECT tip_user.business_id51 AS business_id6
+				,tip_user.date5 AS date6
+				,tip_user.n_tips AS n_tips
+				,tip_user.cum_n_tips AS cum_n_tips
+				,(
+					SELECT max(max_us_friends) AS cum_max_friends
+					FROM (
+						SELECT j->>'business_id' AS business_id
+							,j->>'date' AS date
+							,max(users1.n_friends) AS max_us_friends
+						FROM tip
+						LEFT JOIN (
+							SELECT j->>'user_id' AS user_id
+								,array_length(string_to_array(users.j->>'friends', ','), 1) AS n_friends
+							FROM users
+							) AS users1 ON tip.j->>'user_id' = users1.user_id
+						GROUP BY j->>'business_id'
+							,j->>'date'
+						) AS t53
+					WHERE t53.business_id = tip_user.business_id51
+						AND t53.DATE::DATE < tip_user.date5
+					)
+				,(
+					SELECT STRING_AGG(DISTINCT u_names, ',') AS cum_u_names
+					FROM (
+						SELECT j->>'business_id' AS business_id
+							,j->>'date' AS date
+							,STRING_AGG(DISTINCT users1.u_name, ',') AS u_names
+						FROM tip
+						LEFT JOIN (
+							SELECT j->>'user_id' AS user_id
+								,users.j->>'name' AS u_name
+							FROM users
+							) AS users1 ON tip.j->>'user_id' = users1.user_id
+						GROUP BY j->>'business_id'
+							,j->>'date'
+						) AS t53
+					WHERE t53.business_id = tip_user.business_id51
+						AND t53.DATE::DATE < tip_user.date5
+					)
+				,(
+					SELECT max(max_u_elite) AS cum_max_u_elite
+					FROM (
+						SELECT j->>'business_id' AS business_id
+							,j->>'date' AS date
+							,max(users1.n_elite) AS max_u_elite
+						FROM tip
+						LEFT JOIN (
+							SELECT j->>'user_id' AS user_id
+								,array_length(string_to_array(users.j->>'elite', ','), 1) AS n_elite
+							FROM users
+							) AS users1 ON tip.j->>'user_id' = users1.user_id
+						GROUP BY j->>'business_id'
+							,j->>'date'
+						) AS t53
+					WHERE t53.business_id = tip_user.business_id51
+						AND t53.DATE::DATE < tip_user.date5
+					)
+				,(
+					SELECT max(max_us_fans) AS cum_max_us_fans
+					FROM (
+						SELECT j->>'business_id' AS business_id
+							,j->>'date' AS date
+							,max(users1.u_fans) AS max_us_fans
+						FROM tip
+						LEFT JOIN (
+							SELECT j->>'user_id' AS user_id
+								,j->>'fans' AS u_fans
+							FROM users
+							) AS users1 ON tip.j->>'user_id' = users1.user_id
+						GROUP BY j->>'business_id'
+							,j->>'date'
+						) AS t53
+					WHERE t53.business_id = tip_user.business_id51
+						AND t53.DATE::DATE < tip_user.date5
+					)
+				,(
+					SELECT max(max_us_tip) AS cum_max_us_tip
+					FROM (
+						SELECT j->>'business_id' AS business_id
+							,j->>'date' AS date
+							,max(users1.us_tip) AS max_us_tip
+						FROM tip
+						LEFT JOIN (
+							SELECT j->>'user_id' AS user_id
+								,j->>'review_count' AS us_tip
+							FROM users
+							) AS users1 ON tip.j->>'user_id' = users1.user_id
+						GROUP BY j->>'business_id'
+							,j->>'date'
+						) AS t53
+					WHERE t53.business_id = tip_user.business_id51
+						AND t53.DATE::DATE < tip_user.date5
+					)
+			FROM (
+				SELECT t52.business_id51 AS business_id51
+					,t52.date5 AS date5
+					,t52.n_tips AS n_tips
+					,(
+						SELECT COUNT(t51.j->>'text')
+						FROM tip AS t51
+						WHERE t51.j->>'business_id' = t52.business_id51
+							AND (t51.j->>'date')::DATE < t52.date5
+						) AS cum_n_tips
+				FROM (
+					SELECT business_id53 AS business_id51, date53 AS date5, n_tips
+					FROM (SELECT tip.j->>'business_id' AS business_id53, date_trunc('day', generate_series
+							( '2018-01-01'::timestamp 
+							, '2018-31-12'::timestamp                           -- CHANGE OF PERIOD 1/1/2018 - 31/12/2018
+							, '1 day'::interval))::date AS date53
+						FROM tip, business AS bus
+						WHERE tip.j->>'business_id'=bus.j->>'business_id' AND bus.j->>'city'='Akron'
+						GROUP BY tip.j->>'business_id') AS t53
+						LEFT JOIN 
+							(SELECT tip.j->>'business_id' AS business_id5x
+													,(tip.j->>'date')::DATE AS date5x
+													,COUNT(tip.j->>'text') AS n_tips
+												FROM tip, business AS bus
+												WHERE tip.j->>'business_id'=bus.j->>'business_id' AND bus.j->>'city'='Akron'
+												GROUP BY tip.j->>'business_id'
+													,date5x) AS t5x
+							ON business_id5x=business_id53 AND date5x=date53
+					) AS t52
+				) AS tip_user
+			) AS t_ru ON t_ch.date3 = t_ru.date6
+			AND t_ch.business_id3 = t_ru.business_id6
+		WHERE cum_n_tips <> 0
+	) AS t_ruc
+WHERE t_bp.business_id = t_ruc.business_id;
+
+
+
+##########################################################################################
+2.1) SQL code to get the reviews
+##########################################################################################
+-- SQL for reviews, merged with user information.
+
+SELECT 
+rev.j ->> 'date' AS date,
+rev.j ->> 'business_id' AS business_id,
+rev.j ->> 'text' AS Review,
+rev.j ->> 'user_id' AS user_id,
+rev.j ->> 'stars' AS stars,
+usr.j ->> 'elite' AS elite_user,
+usr.j ->> 'friends' AS friends,
+usr.j ->> 'name' AS name,
+usr.j ->> 'fans' AS fans
+FROM
+public.review AS rev
+INNER JOIN
+public.business AS bus ON rev.j ->> 'business_id' = bus.j ->> 'business_id'
+INNER JOIN
+public.users AS usr ON rev.j ->> 'user_id' = usr.j ->> 'user_id'
+WHERE
+rev.j ->> 'business_id' = bus.j ->> 'business_id' 
+AND bus.j ->> 'city' = 'Akron'
+
+##########################################################################################
+2.2) R code to process the review data and merge it to the main dataframe
+##########################################################################################
+
+## Written by Jasper Stuerwald
+## last update 05.07.2023
+library(gender)
+#remotes::install_github("ropensci/gender-data-pkg")
+library(genderdata)
+library(dplyr)
+
+#Load in the extracted dataframe 
+# data exctracted using the review_data_akron.sql query.
+rtA = read.csv("review_data_akron.csv")
+
+#Review by Elite User
+rtA$elite_status <- ifelse(!is.na(rtA$elite_user), 1, 0)
+#Friends count of the user that wrote the review
+rtA$friends <- ifelse(is.na(rtA$friends) | rtA$friends == "None", NA, rtA$friends)
+rtA$friends_count <- ifelse(!is.na(rtA$friends),stringr::str_count(rtA$friends, ",") + 1,0)
+#gender
+gender_vector = gender(rtA$name)
+unique_rows  = !duplicated(gender_vector)
+gender_vector = gender_vector[unique_rows,][c(1,4)]
+rtA = merge(rtA, gender_vector, by = "name", all.x = TRUE)
+
+#Get the dynamic data
+rtA$date = as.Date(rtA$date)
+#First divide the dataframe into everything up to the start date of the final dataframe and everything after that date to the enddate of the df
+
+start_date <- as.Date("2018-01-01")  # Start date of the range
+end_date <- as.Date("2018-11-14")    # End date of the range
+
+date_range <- seq(start_date, end_date, by = "day")  # Create a sequence of dates
+
+results <- data.frame()  # Create an empty dataframe to store the results
+
+for (i in seq_along(date_range)) {
+  date <- date_range[i]
+  
+  rtA_filtered <- rtA[rtA$date < date,]
+  
+  rtA_grouped <- rtA_filtered %>%
+    group_by(business_id) %>%
+    summarize(
+      #avg_sentiment_score_review = mean(sentiment_score_review),
+      sum_elite_status = sum(elite_status),
+      max_friends_count = max(friends_count),
+      num_male = sum(gender == "male", na.rm = TRUE),
+      num_female = sum(gender == "female", na.rm = TRUE),
+      sum_fans = sum(fans, na.rm = TRUE),
+      avg_stars = mean(stars, na.rm = TRUE),
+      review_count = n()
+    ) %>%
+    mutate(date = as.Date(date))
+  
+  rtA_grouped <- mutate(rtA_grouped, date = date)
+  
+  results <- bind_rows(results, rtA_grouped)  # Append the results to the dataframe
+}
+
+##########################################################################################
+3) R code to extract weather data
+##########################################################################################
+
+extractweather=function(mindate=min(dataset$date),maxdate=max(dataset$date),
+                        latrange=range(dataset$business_lat),longrange=range(dataset$business_long),
+                        resol=.5,getdata=FALSE,
+                        wear=ifelse("weatherPRCPSNWDSNOWTMAXTMINTOBS.RData"%in%list.files(),"available","navailable")){
+  wdatacond=wear=="navailable"
+  if(getdata | wdatacond){
+    require("doParallel")
+    
+    cl <- makeCluster(detectCores())
+    registerDoParallel(cl)
+    
+    # read the station names
+    stations=read.delim(url("https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.txt"),header = F,quote="",sep="")[,1:3]
+    colnames(stations)=c("Station","lat","long")
+    stations=stations[strtrim(stations$Station,2)=="US",]
+    stations$lat=as.numeric(stations$lat)
+    stations$long=as.numeric(stations$long)
+    stations=stations[!is.na(stations$lat)|!is.na(stations$long),]
+    
+    #mindate=min(dataset$date)#"2016-05-01"#
+    #maxdate=max(dataset$date)#"2016-05-02"#
+    #latrange=range(dataset$business_lat)
+    #longrange=range(dataset$business_long)
+    
+    latseq=c(seq(latrange[1],latrange[2],by=resol),latrange[2])
+    longseq=c(seq(longrange[1],longrange[2],by=resol),longrange[2])
+    
+    wear=NULL
+    k=0
+    torunlist=NULL
+    for(lat in 1:(length(latseq)-1)){#(length(latseq)-1)
+      for(lon in 1:(length(longseq)-1)){
+        k=k+1
+        torunlist=rbind(torunlist,c(lat,lon))
+      }
+    }
+    wear=foreach(i=1:k,.noexport=ls(),.export=c("latseq","longseq","stations","torunlist","mindate","maxdate"))%dopar%
+      {  
+        # find the station(s) within the boxes
+        lat=torunlist[i,1]
+        lon=torunlist[i,2]
+        rangelat=c(latseq[lat+1],latseq[lat])
+        rangelong=c(longseq[lon],longseq[lon+1])
+        indx=(stations$lat>rangelat[2])&(stations$lat<rangelat[1])&(stations$long>rangelong[1])&(stations$long<rangelong[2])
+        stations_temp=stations[indx,]
+        stations_t=paste(stations_temp$Station,collapse=",")
+        temp=paste0("dataset=daily-summaries&dataTypes=PRCP,SNWD,SNOW,TMAX,TMIN,TOBS",
+                    "&stations=",stations_t,"&startDate=",mindate,"","&endDate=",maxdate)#,
+        #"","&boundingBox=",paste(latseq[lat+1],longseq[lon],latseq[lat],longseq[lon+1],sep=","))##90,-180,-90,180
+        valid_url <- TRUE
+        a=tryCatch(read.csv(url(paste0("https://www.ncei.noaa.gov/access/services/data/v1?",temp))),error=function(e) {valid_url<<-FALSE})
+        toreturn=NULL
+        if(valid_url)
+          toreturn=list(range=cbind(rangelat,rangelong),data=read.csv(url(paste0("https://www.ncei.noaa.gov/access/services/data/v1?",temp))))
+        return(toreturn)
+        #print(c(lat,lon,valid_url))
+      }
+    
+    
+    stopCluster(cl)
+    save(file="weatherPRCPSNWDSNOWTMAXTMINTOBS.RData",list=c("wear"))
+  }else{
+    if(wear=="available"){
+      load("weatherPRCPSNWDSNOWTMAXTMINTOBS.RData")
+    }
+  }
+  return(wear)
+}
+
+
+weather=extractweather('2008-01-01','2008-12-31',c(36.1447045,36.7447045),c(-115.2593035,-110.2593035))
+
+
+
+weardailyavg=function(wear){
+  # this function converts the extracted weather data into daily level data.
+  if("weather_data.RData"%in%list.files()){
+    load(file="weather_data.RData")
+  }else{
+    require("doParallel")
+    
+    cl <- makeCluster(detectCores())
+    registerDoParallel(cl)
+    clusterCall(cl,function(x) {library(dplyr)})
+    wear_avg=NULL
+    k=0
+    wear_avg=foreach(i=1:length(wear),.noexport=ls(),.export=c("wear"),.packages = c("dplyr"))%dopar%
+      {
+        if(is.null(wear[[i]])){
+          temp=NULL
+        }else{
+          temp=wear[[i]]$data %>%
+            group_by(DATE) %>%
+            summarize(PRCP=mean(PRCP,na.rm = T),SNOW=mean(SNOW,na.rm = T),SNWD=mean(SNWD,na.rm = T),
+                      TMAX=mean(TMAX,na.rm = T),TMIN=mean(TMIN,na.rm = T),TOBS=mean(TOBS,na.rm = T))
+          temp=list(range=wear[[i]]$range,data=temp)}
+        return(temp)
+        
+      }
+    stopCluster(cl)
+    weather=NULL
+    k=0
+    for(i in 1:length(wear_avg)){
+      if(is.null(wear[[i]]))
+        next
+      k=k+1
+      weather[[k]]=wear_avg[[i]]
+      weather[[k]]$data$DATE=as.Date(weather[[k]]$data$DATE)
+    }
+    save(file="weather_data.RData",list=c("weather"))
+  }
+  return(weather)
+}
+
+weatherdaily=weardailyavg(weather)
+
+
+##########################################################################################
+4) Supplementary code for deploying
+##########################################################################################
+
+# deploy of the functions used for the analysis
+
+extractweather=function(dataset,mindate=min(dataset$date),maxdate=max(dataset$date),
+                        latrange=range(dataset$business_lat),longrange=range(dataset$business_long),
+                        resol=.5,getdata=FALSE,
+                        wear=ifelse("weatherPRCPSNWDSNOWTMAXTMINTOBS.RData"%in%list.files(),"available","navailable")){
+  # queries weather data from ncdc.noaa.gov, in a grid format from
+  # mindate until maxdate. If not specified, takes the min and maxdate from 
+  # dataset.
+  # The geographical range is latitudinal in latrange and longitudinal in long-
+  # range. The resolution of the grids is determined by resol.
+  # the data is stored in weatherPRCPSNWDSNOWTMAXTMINTOBS.RData , if already
+  # existing, the weather data is no more extracted. If you need to refresh your
+  # data, you will first need to delete weatherPRCPSNWDSNOWTMAXTMINTOBS.RData
+  wdatacond=wear=="navailable"
+  if(getdata | wdatacond){
+    require("doParallel")
+    
+    cl <- makeCluster(detectCores(),outfile="log1.txt")
+    registerDoParallel(cl)
+    
+    # read the station names
+    stations=read.delim(url("https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.txt"),header = F,quote="",sep="")[,1:3]
+    colnames(stations)=c("Station","lat","long")
+    stations=stations[strtrim(stations$Station,2)=="US",]
+    stations$lat=as.numeric(stations$lat)
+    stations$long=as.numeric(stations$long)
+    stations=stations[!is.na(stations$lat)|!is.na(stations$long),]
+    
+    #mindate=min(dataset$date)#"2016-05-01"#
+    #maxdate=max(dataset$date)#"2016-05-02"#
+    #latrange=range(dataset$business_lat)
+    #longrange=range(dataset$business_long)
+    
+    latseq=c(seq(latrange[1],latrange[2],by=resol),latrange[2])
+    longseq=c(seq(longrange[1],longrange[2],by=resol),longrange[2])
+    
+    wear=NULL
+    k=0
+    torunlist=NULL
+    for(lat in 1:(length(latseq)-1)){#(length(latseq)-1)
+      for(lon in 1:(length(longseq)-1)){
+        k=k+1
+        torunlist=rbind(torunlist,c(lat,lon))
+      }
+    }
+    wear=foreach(i=1:k,.noexport=ls(),.export=c("latseq","longseq","stations","torunlist","mindate","maxdate"))%dopar%
+      {  
+        # find the station(s) within the boxes
+        lat=torunlist[i,1]
+        lon=torunlist[i,2]
+        rangelat=c(latseq[lat+1],latseq[lat])
+        rangelong=c(longseq[lon],longseq[lon+1])
+        indx=(stations$lat>rangelat[2])&(stations$lat<rangelat[1])&(stations$long>rangelong[1])&(stations$long<rangelong[2])
+        stations_temp=stations[indx,]
+        stations_t=paste(stations_temp$Station,collapse=",")
+        temp=paste0("dataset=daily-summaries&dataTypes=PRCP,SNWD,SNOW,TMAX,TMIN,TOBS",
+                    "&stations=",stations_t,"&startDate=",mindate,"","&endDate=",maxdate)#,
+        #"","&boundingBox=",paste(latseq[lat+1],longseq[lon],latseq[lat],longseq[lon+1],sep=","))##90,-180,-90,180
+        valid_url <- TRUE
+        a=tryCatch(read.csv(url(paste0("https://www.ncei.noaa.gov/access/services/data/v1?",temp))),error=function(e) {valid_url<<-FALSE})
+        toreturn=NULL
+        if(valid_url)
+          toreturn=list(range=cbind(rangelat,rangelong),data=read.csv(url(paste0("https://www.ncei.noaa.gov/access/services/data/v1?",temp))))
+        print(c(lat,lon,valid_url))
+        return(toreturn)
+        #print(c(lat,lon,valid_url))
+      }
+    
+    
+    stopCluster(cl)
+    save(file="weatherPRCPSNWDSNOWTMAXTMINTOBS.RData",list=c("wear"))
+  }else{
+    if(wear=="available"){
+      load("weatherPRCPSNWDSNOWTMAXTMINTOBS.RData")
+    }
+  }
+  return(wear)
+}
+
+
+weardailyavg=function(wear){
+# this function converts the extracted weather data into daily level data.
+  if("weather_data.RData"%in%list.files()){
+    load(file="weather_data.RData")
+  }else{
+    require("doParallel")
+    
+    cl <- makeCluster(detectCores())
+    registerDoParallel(cl)
+    clusterCall(cl,function(x) {library(dplyr)})
+    wear_avg=NULL
+    k=0
+    wear_avg=foreach(i=1:length(wear),.noexport=ls(),.export=c("wear"),.packages = c("dplyr"))%dopar%
+      {
+        if(is.null(wear[[i]])){
+          temp=NULL
+        }else{
+          temp=wear[[i]]$data %>%
+            group_by(DATE) %>%
+            summarize(PRCP=mean(PRCP,na.rm = T),SNOW=mean(SNOW,na.rm = T),SNWD=mean(SNWD,na.rm = T),
+                      TMAX=mean(TMAX,na.rm = T),TMIN=mean(TMIN,na.rm = T),TOBS=mean(TOBS,na.rm = T))
+          temp=list(range=wear[[i]]$range,data=temp)}
+        return(temp)
+        
+      }
+    stopCluster(cl)
+    weather=NULL
+    k=0
+    for(i in 1:length(wear_avg)){
+      if(is.null(wear[[i]]))
+        next
+      k=k+1
+      weather[[k]]=wear_avg[[i]]
+      weather[[k]]$data$DATE=as.Date(weather[[k]]$data$DATE)
+    }
+    save(file="weather_data.RData",list=c("weather"))
+  }
+  return(weather)
+}
+
+
+makeLiftPlot <- function(Prediction, Evaluate, ModelName){
+  # plots the liftplot, and computes the GINI coefficient.
+  iPredictionsSorted <- sort(Prediction,index.return=T,decreasing=T)[2]$ix #extract the index order according to predicted retention
+  CustomersSorted <- Evaluate$ch_in_string[iPredictionsSorted] #sort the true behavior of customers according to predictions
+  SumChurnReal<- sum(Evaluate$ch_in_string == "ch_in") #total number of real churners in the evaluation set
+  CustomerCumulative=seq(nrow(Evaluate))/nrow(Evaluate) #cumulative fraction of customers
+  ChurnCumulative=apply(matrix(CustomersSorted=="ch_in"),2,cumsum)/SumChurnReal #cumulative fraction of churners
+  ProbTD = sum(CustomersSorted[1:floor(nrow(Evaluate)*.1)]=="ch_in")/floor(nrow(Evaluate)*.1) #probability of churn in 1st decile
+  ProbOverall = SumChurnReal / nrow(Evaluate) #overall churn probability
+  TDL = ProbTD / ProbOverall
+  GINI = sum((ChurnCumulative-CustomerCumulative)/(t(matrix(1,1,nrow(Evaluate))-CustomerCumulative)),na.rm=T)/nrow(Evaluate)
+  plot(CustomerCumulative,ChurnCumulative,type="l",main=paste("Lift curve of", ModelName),xlab="Cumulative fraction of check-ins (sorted by predicted check-in probability)",ylab="Cumulative fraction of check-ins")
+  lines(c(0,1),c(0,1),col="blue",type="l",pch=22, lty=2)
+  legend(.66,.2,c("According to model","Random selection"),cex=0.8,  col=c("black","blue"), lty=1:2)
+  text(0.15,1,paste("TDL = ",round(TDL,2), "; GINI = ", round(GINI,2) ))
+  return(data.frame(TDL,GINI))
+}
+
+##########################################################################################
+5) DailyLevelData_tips_v1.R -- This code deals with missings and irregularities for Akron data.
+##########################################################################################
+
+rm(list = ls()) #clear workspace
+
+library(Hmisc)
+library(dplyr)
+
+#setwd("H:\\Dropbox\\Dropbox\\Frankfurt Courses\\Data Science\\2021-22\\Termpaper") #set working directory
+setwd("/home/rstudio1/Dropbox/Frankfurt Courses/Data Science/2022/Termpaper")
+DailyLevel_data <- read.csv("tips_2018-01-01-2018-11-14-Akron_data.csv",header=TRUE, na.strings="NA") #read csv file. Be aware of the parameters, such as the string for NA's. Usually either "" or "\\NA".
+cum_u_names=DailyLevel_data$cum_u_names
+Nobs=length(cum_u_names)
+
+# replacing the cum_u_names with the count of reviewers' genders
+if(0){ # takes some time to run, if you prefer not to wait too long and you have not changed the data, you can use "namelist.RData" to load the results.
+  #install.packages("gender")
+  library(gender)
+  #remotes::install_github("ropensci/gender-data-pkg")
+  library(genderdata)
+  # best is to do gender extractin in parallel
+  library(doParallel)
+  
+  
+  gendersplit=function(x){
+    a=max.col(gender(unlist(strsplit(x,",")))[,2:3])
+    return(c(male=sum(a==1,na.rm=T),female=sum(a==2,na.rm=T)))
+  }
+  
+  cl=makeCluster(detectCores()/2+2)
+  registerDoParallel(cl)
+  nameslist=NULL
+  for(k in 1:20){
+    whichrun=floor(Nobs/20*(k-1)+1):floor(Nobs/20*k)
+    a=foreach(i=whichrun,.packages=c("gender"),.noexport = c("DailyLevel_data"),.combine=rbind) %dopar%
+      {gendersplit(cum_u_names[i])}
+    rownames(a)=NULL
+    nameslist=rbind(nameslist,a)
+    print(k)
+  }
+  stopImplicitCluster()
+  stopCluster(cl)
+  save(file="nameslist_rev.RData",list="nameslist")
+}else{
+  load("nameslist_rev.RData")  
+}
+
+DailyLevel_data=cbind(DailyLevel_data,nameslist)  
+DailyLevel_data$cum_u_names=NULL
+
+# store the date in date column and remove the old name
+DailyLevel_data$date <- as.Date(DailyLevel_data$date_tip) 
+DailyLevel_data$date_tip <- NULL
+
+# merge with business data
+business_data=read.csv("akron_business.csv",header=TRUE, na.strings="NULL")
+
+## now dealing with the missings.
+business_data$n_photo[is.na(business_data$n_photo)]=0
+
+business_data1 <- subset(business_data,select = -c(business_id)) # removed this because MICE does not like imputing factors with more than 50 levels
+
+library(mice)
+
+#inspect pattern of missings
+md.pattern(business_data1)
+
+#Below, the predictormatrix is specified.
+#It is a square matrix of size ncol(data) containing 0/1 data specifying the set of predictors to be used for each target column. 
+#Rows correspond to target variables (i.e. variables to be imputed), in the sequence as they appear in data. 
+#A value of '1' means that the column variable is used as a predictor for the target variable (in the rows). 
+#The diagonal of predictorMatrix must be zero.
+predictorMatrix <- matrix(0,nrow = ncol(business_data1), ncol = ncol(business_data1)) # Make a matrix of zeros
+colnames(predictorMatrix)=colnames(business_data1)
+row.names(predictorMatrix)=colnames(business_data1)
+predictorMatrix[c("business_price"),] <- 1 #variables "business_price" can be explained by all other variables
+diag(predictorMatrix) <- 0 #diagonal must be zero
+
+#impute data
+business_data1_data_imputed <- mice(business_data1, predictorMatrix = predictorMatrix, m=5, maxit = 50, seed = 500)
+
+summary(business_data1_data_imputed)
+
+#get one of the complete data sets ( 2nd out of 5)
+business_data_complete_data <- complete(business_data1_data_imputed,2)
+
+# bring back the business_id
+business_data_complete_data=cbind(business_id=business_data$business_id,business_data_complete_data)
+
+DailyLevel_data=DailyLevel_data%>%
+  inner_join(business_data_complete_data,by="business_id")
+
+# make factors out of chr variables
+for(j in 1:ncol(DailyLevel_data)){
+  if(typeof(DailyLevel_data[,j])=="character")
+    DailyLevel_data[,j]=as.factor(DailyLevel_data[,j])
+}
+
+# limit the number of categories to Asian, American, Mexican and Others
+
+cat_s=as.character(DailyLevel_data$business_cat)
+new_cat_s=c("Others","Asian", "American", "Mexican")
+
+changed=0
+for(k in new_cat_s[-1]){
+  cat_s[grepl(k,cat_s)]=k
+  changed=changed+grepl(k,cat_s)
+}
+cat_s[changed==0]="Others"
+DailyLevel_data$business_cat=as.factor(cat_s)
+
+# n_photos==NA and cum_max_u_elite==NA are actually zeros, let's replace them with 0 before imputing.
+
+DailyLevel_data$cum_max_u_elite[is.na(DailyLevel_data$cum_max_u_elite)]=0
+
+# some descriptives of the data
+describe(DailyLevel_data)
+
+
+
+#the complete data sets can be used to estimate your model of choice
+#and the results of all 5 models can be combined as in the earlier example
+write.csv(DailyLevel_data, file="DailyLevel_data_tip_Imputed.csv")
+
+
+
+##########################################################################################
+6) DailyLevelData_tips_v2.r -- Reads in the imputed data from DailyLevelData_tips_v1.R and joins it with weather data.
+##########################################################################################
+
+rm(list = ls()) #clear workspace
+library(dplyr)
+library(doParallel)
+library(caret)
+library(smotefamily)
+
+setwd("/home/rstudio1/Dropbox/Frankfurt Courses/Data Science/2022/Termpaper")
+#setwd("~/R/dropbox/Frankfurt Courses/Data Science/Termpaper") #set working directory
+
+source("DailyLevelData_analysis_functions.r")
+
+# ----
+# This loop extracts the weather data, and add it to the yelp data.
+if(0){
+  #load data
+  yelp_data <- read.csv("DailyLevel_data_tip_Imputed.csv",header=TRUE,skipNul = T) #read csv file
+  yelp_data$date <- as.Date(yelp_data$date)
+  yelp_data$X=NULL
+  
+  #---- read the temperature data
+  wear=extractweather(yelp_data,resol=.25)
+  
+  # take the averages across stations for each coordinate
+  weather=weardailyavg(wear)
+  
+  
+  
+  dates=sort(unique(yelp_data$date))
+  weatherstations=as.data.frame(t(sapply(weather,function(x){colMeans(x$range)})))
+  
+  # adding weather data to yelp_data
+  if(1){
+    stations_by=t(apply(yelp_data[,c("business_lat","business_long")],1,
+                        function(x){a=sort((x[1]-weatherstations$rangelat)^2+
+                                             (x[2]-weatherstations$rangelong)^2,index.return=T)
+                        return(a$ix[1:50])})) # finding the 50 closest stations
+    
+    # add for example, temperature forecasts to the weather data
+    for(i in 1:length(weather)){
+      if(nrow(weather[[i]]$data)==0)
+        next
+      store_weather=weather[[i]]$data
+      store_weather$TOBS_1=c(store_weather$TOBS[2:nrow(store_weather)],NA)
+      store_weather$TOBS_2=c(store_weather$TOBS[3:nrow(store_weather)],NA,NA)
+      store_weather$TOBS_3=c(store_weather$TOBS[4:nrow(store_weather)],NA,NA,NA)
+      store_weather$TOBS_4=c(store_weather$TOBS[5:nrow(store_weather)],NA,NA,NA,NA)
+      weather[[i]]$data=store_weather
+    }
+    weatherinf=colnames(store_weather)[-1] # which weather variables are available?
+    
+    yelp_data_weather=NULL
+    for(i in 1:length(weather)){
+      k=1 # start with the closest station
+      stores_in=stations_by[,k]==i
+      if(sum(stores_in)==0)
+        next
+      store_weather=weather[[i]]$data
+      
+      temp=yelp_data[stores_in,]
+      temp=merge(temp,store_weather,by.x="date",by.y="DATE",all.x=T)
+      yelp_data_weather=rbind(yelp_data_weather,temp)
+      print(i)
+    }
+    
+    # now deal with the missings, by going to the next possible station
+    temp_indx=is.na(yelp_data_weather[,"TOBS"])|is.na(yelp_data_weather[,"PRCP"])
+    k_changed=NULL
+    for(i in which(temp_indx)){
+      temp_date=yelp_data_weather[i,]$date
+      for(k in 2:ncol(stations_by)){
+        temp=weather[[stations_by[i,k]]]$data
+        if(!is.na(as.numeric(temp[temp$DATE==temp_date,"TOBS"]))&!is.na(as.numeric(temp[temp$DATE==temp_date,"PRCP"])))
+          break
+      }
+      k_changed=c(k_changed,k)
+      
+      yelp_data_weather[i,weatherinf]=temp[temp$DATE==temp_date,-1]
+      #print(i)
+    }
+    
+    # add weekends and quarters
+    temp=weekdays(yelp_data_weather$date,abbreviate = T)
+    yelp_data_weather$WE=temp=="Sat"|temp=="Sun"
+    
+    yelp_data_weather$Quarter=as.factor(quarters(yelp_data_weather$date))
+    
+    #save(file="yelp_data_weather.RData",list=c("yelp_data_weather"))
+    write.csv(yelp_data_weather,file="yelp_data_tip_weather.csv")
+    
+  }
+  
+}
+
+
+# ----
+# Importing and adjusting the yelp-data + weather data
+yelp_data_weather=read.csv(file="yelp_data_tip_weather.csv")
+
+# some adjustments to the imported data
+yelp_data=yelp_data_weather
+
+yelp_data$date = as.Date(yelp_data$date)
+yelp_data$ch_in_string[yelp_data$ch_in>=1]="ch_in"
+yelp_data$ch_in_string[yelp_data$ch_in==0]="Noch_in"
+yelp_data$ch_in_string <- as.factor(yelp_data$ch_in_string)
+#yelp_data$ch_in_string <- relevel(yelp_data$ch_in_string,ref="ch_in") # since the performance evaluations are mainly made
+# to check for the minority class - in our case Noch_in
+
+
+yelp_data$business_park=as.factor(yelp_data$business_park)
+yelp_data$business_open=as.factor(yelp_data$business_open)
+yelp_data$business_cat=as.factor(yelp_data$business_cat)
+yelp_data$WE=as.factor(yelp_data$WE)
+yelp_data$Quarter=as.factor(yelp_data$Quarter)
+
+
+# A simple regression analysis ----
+m1=glm(ch_in~cum_n_tips+cum_max_friends+cum_max_us_fans+cum_max_us_tip+I((male+1)/(female+1))+
+         business_price+business_park+business_open+business_cat+n_photo+
+         PRCP+SNOW+SNWD+TMAX+TMIN+TOBS_3+Quarter+WE, data = yelp_data, family = "binomial")
+car::vif(m1)
+summary(m1)
+
+
+##########################################################################################
+7) Exploratory Analysis & Preprocessing & Machine Learning
+##########################################################################################
+
+# Libraries
+library(visdat)
+library(skimr)
+library(DataExplorer)
+library(corrplot)
+library(dplyr)
+library(doParallel)
+library(caret)
+library(smotefamily)
+library(stargazer) #Create a ready to use table in LaTeX style
+# https://www.r-bloggers.com/2013/01/stargazer-package-for-beautiful-latex-tables-from-r-statistical-models-output/
+library(MASS)
+
+setwd("/Users/manuelscionti/Desktop/Yelp/")
+source("DailyLevelData_analysis_functions.r")
+
+# Loading the dataset
+yelp_data<-read.csv("/Users/manuelscionti/Desktop/Yelp/df_complete.csv")
+
+
+# source("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/DailyLevelData_analysis_functions.r")
+# 
+# # Loading the dataset
+# yelp_data<-read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/df_complete.csv")
+
+########## EXPLORATORY ANALYSIS ###################
+
+dim(yelp_data) #dimension df
+sum(!complete.cases(yelp_data)) #number of NaN values (0)
+names(yelp_data) #names columns
+str(yelp_data) #statistical info, variable type...
+summary(yelp_data)
+
+# ---- Cleaning & Preprocessing ------
+
+#Let's drop some not useful variables for our ML analysis
+yelp_data <- subset(yelp_data, select = -c(X
+                                           ,WE
+                                           ,business_id.x
+                                           ,date.x
+                                           ,bus_name
+                                           ,city
+                                           ,wifi
+                                           ,tv
+                                           ,noise
+                                           ,goodforgroups
+                                           ,outdoorseating
+                                           ,creditcardpayment
+                                           ,alcohol
+                                           ,bikeparking
+                                           ,weekdays
+                                           ,review_count.y) )
+
+yelp_data$ch_in_string[yelp_data$ch_in>=1]="ch_in"
+yelp_data$ch_in_string[yelp_data$ch_in==0]="Noch_in"
+yelp_data$ch_in_string <- as.factor(yelp_data$ch_in_string)
+yelp_data$ch_in_string <- relevel(yelp_data$ch_in_string,ref="Noch_in")
+
+# 1) Cast all the variables with their right datatype
+yelp_data$business_park <- factor(yelp_data$business_park, levels = c('TRUE', 'FALSE'), labels = c("1", "0"))
+yelp_data$business_park <- as.numeric(yelp_data$business_park)-1
+yelp_data$business_cat <- factor(yelp_data$business_cat)
+yelp_data$Quarter <- factor(yelp_data$Quarter)
+yelp_data$business_open=factor(yelp_data$business_open)
+yelp_data$business_open <- as.numeric(yelp_data$business_open)-1
+
+#Create Male/Female ratio tips
+yelp_data$male_to_female_tips_ratio = (yelp_data$male + 1)/(yelp_data$female+ 1)
+#Create Male/Female ratio reviews
+yelp_data$male_to_female_review_ratio = (yelp_data$num_male + 1) / (yelp_data$num_female + 1)
+#Drop the now unimportant columns with the absolute numbers of male and female contributers
+yelp_data <- subset(yelp_data, select = -c(male, female, num_male, num_female))
+
+# Rename the "stars" column to "avg_tips_stars"
+colnames(yelp_data)[colnames(yelp_data) == "stars"] <- "avg_tips_stars"
+
+# Rename the "avg_stars" column to "avg_review_stars"
+colnames(yelp_data)[colnames(yelp_data) == "avg_stars"] <- "avg_review_stars"
+
+# Rename the "review_count.x" column to "avg_review_stars"
+colnames(yelp_data)[colnames(yelp_data) == "review_count.x"] <- "cum_n_review"
+
+str(yelp_data)
+View(yelp_data)
+
+physical_attr <- c("ch_in","business_price", "business_open", "business_park","business_cat"
+                   ,"wifi_dummy","tv_dummy","bikeparking_dummy","goodforgroups_dummy"
+                   ,"outdoorseating_dummy","creditcardpayment_dummy","noise_level","alcohol_dummy")
+
+social_attr <- c("ch_in","cum_n_tips","cum_max_friends","cum_max_u_elite","cum_max_us_fans","cum_max_us_tip"
+                 ,"avg_tips_stars","cum_n_review","avg_sentiment_score_review","sum_elite_status","max_friends_count"
+                 ,"male_to_female_tips_ratio","sum_fans","avg_review_stars","male_to_female_review_ratio","n_photo")
+
+external_attr <- c("ch_in","business_lat","business_long","PRCP","SNOW","SNWD","TMAX",
+                   "TMIN","TOBS","TOBS_1","TOBS_2","TOBS_3","TOBS_4","Quarter","weekend")
+
+yelp_data_physical=subset(yelp_data,select=physical_attr)
+yelp_data_social=subset(yelp_data,select=social_attr)
+yelp_data_external=subset(yelp_data,select=external_attr)
+
+
+
+#LaTeX tables - output must be copied in a LaTeX editor (Overleaf)
+stargazer(yelp_data_physical, median = T)
+stargazer(yelp_data_social, median = T)
+stargazer(yelp_data_external, median = T)
+
+
+
+# Select only the numeric columns - physical
+numeric_columns_physical <- yelp_data_physical %>% 
+  select_if(function(x) is.numeric(x)) 
+
+
+correlation.matrix <- cor((numeric_columns_physical))
+# LaTeX table
+stargazer(correlation.matrix, title="Correlation Matrix - Physical Attribues")
+# Correlation plot
+corrplot(correlation.matrix, method="color", type="upper",tl.col = "black",)
+
+# Select only the numeric columns - social
+numeric_columns_social <- yelp_data_social %>% 
+  select_if(function(x) is.numeric(x)) 
+
+
+correlation.matrix <- cor((numeric_columns_social))
+# LaTeX table
+stargazer(correlation.matrix, title="Correlation Matrix - Social Attribues")
+# Correlation plot
+corrplot(correlation.matrix, method="color", type="upper",tl.col = "black",) 
+
+
+# Select only the numeric columns - external
+numeric_columns_external <- yelp_data_external %>% 
+  select_if(function(x) is.numeric(x)) 
+
+
+correlation.matrix <- cor((numeric_columns_external))
+# LaTeX table
+stargazer(correlation.matrix, title="Correlation Matrix - External Attribues")
+# Correlation plot
+corrplot(correlation.matrix, method="color", type="upper",tl.col = "black",) 
+
+
+####### STEPWISE VARIABLE SELECTION ########
+
+# It takes a lot of time. Be careful
+
+library(MASS)
+
+# # Specify your initial full model with all potential predictor variables
+# full_model <- glm(ch_in~.-ch_in_string, data = yelp_data, family = binomial)
+# 
+# # Perform stepwise variable selection using AIC
+# stepwise_model <- stepAIC(full_model, direction = "both")
+# 
+# # View the selected variables in the final model
+# print(stepwise_model)
+
+
+# A simple regression analysis ----
+
+# Just to do diagnostic
+
+#m1=glm(ch_in~cum_n_tips+cum_max_friends+cum_max_us_fans+cum_max_us_tip+I((male+1)/(female+1))+
+ #        business_price+business_park+business_open+business_cat+n_photo+
+  #       PRCP+SNOW+SNWD+TMAX+TMIN+TOBS_3+Quarter+weekend, data = yelp_data, family = "binomial")
+#::vif(m1)
+#summary(m1)
+
+
+
+############# MACHINE LEARNING #######################
+# Split randomly
+set.seed(66)
+yelp_data_na=yelp_data
+# list of variables in your model, choose variables with reasoning
+#varsin=c("ch_in_string","ch_in","SNWD","Quarter","business_price","business_open","business_cat","business_park","TOBS","PRCP","n_photo","female","male","cum_n_tips","cum_max_friends","cum_max_u_elite","cum_max_us_fans","cum_max_us_tip","weekend")
+#We select only the parameters given by the stepwise model. This way we reduce the dimension of our model without and increase the calculation
+#speed without losing too much valuable information
+
+varsin = c("ch_in_string","ch_in", "business_open", "business_park","business_cat"
+           ,"wifi_dummy","goodforgroups_dummy"
+           ,"outdoorseating_dummy","creditcardpayment_dummy","n_photo"
+           ,"cum_n_tips"
+           ,"avg_tips_stars","cum_n_review"
+           ,"male_to_female_tips_ratio"
+           ,"business_lat","business_long","TOBS_3","TOBS_4","Quarter","weekend")
+
+yelp_data_used_vars=subset(yelp_data,select=varsin)
+
+
+#LaTeX tables - output must be copied in a LaTeX editor (Overleaf)
+stargazer(yelp_data_used_vars, median = T)
+
+
+
+yelp_data_AIC=subset(yelp_data,select=varsin)
+stargazer(yelp_data_AIC)
+#varsin = c("ch_in_string","ch_in","business_price", "business_open", "business_park","business_cat"
+ #          ,"wifi_dummy","tv_dummy","bikeparking_dummy","goodforgroups_dummy"
+  #         ,"outdoorseating_dummy","creditcardpayment_dummy","noise_level","alcohol_dummy","n_photo"
+   #        ,"cum_n_tips","cum_max_friends","cum_max_u_elite","cum_max_us_fans","cum_max_us_tip"
+    #       ,"stars","review_count.x","avg_sentiment_score_review","sum_elite_status","max_friends_count"
+     #      ,"male_to_female_tips_ratio","sum_fans","avg_stars","male_to_female_review_ratio"
+      #     ,"business_lat","business_long","PRCP","SNOW","SNWD","TMAX"
+       #    ,"TMIN","TOBS","TOBS_1","TOBS_2","TOBS_3","TOBS_4","Quarter","weekend")
+
+yelp_data=subset(yelp_data,select=varsin)
+
+# set "/1" for full dataset size
+datasetsize=nrow(yelp_data)/20 # would you like to work only  on a subset of your data? 
+x <- yelp_data[sample(1:nrow(yelp_data), datasetsize, replace = F),]
+x.train <- x[1:floor(nrow(x)*.75), ]
+x.evaluate <- x[(floor(nrow(x)*.75)+1):nrow(x), ]
+
+BaseFormula <- as.formula(paste0("ch_in_string~",paste(varsin[-c(1,2)],collapse = "+")))
+BaseFormula1 <- as.formula(paste0("ch_in~",paste(varsin[-c(1,2)],collapse = "+")))
+
+
+# create dummies (required for SMOTE)
+x.traindum=cbind(x.train[,c("ch_in","ch_in_string")],predict(dummyVars(BaseFormula1,data=x.train),newdata = x.train))
+x.evaluatedum=cbind(x.evaluate[,c("ch_in","ch_in_string")],predict(dummyVars(BaseFormula1,data=x.evaluate),newdata = x.evaluate))
+
+# class imbalance check.
+temp=table(x.train[,"ch_in_string"])
+print(temp)
+
+if(1){
+  x.traindum_smote=SMOTE(x.traindum[,-c(1,2)],x.traindum[,2])$data
+  names(x.traindum_smote)[ncol(x.traindum_smote)]="ch_in_string"
+  x.traindum_smote$ch_in=ifelse(x.traindum_smote$ch_in_string=="ch_in",1,0)
+  x.traindum_smote$ch_in_string=as.factor(x.traindum_smote$ch_in_string)
+  x.traindum=x.traindum_smote
+  rm(x.traindum_smote)
+}
+temp=table(x.traindum[,"ch_in_string"])
+print(temp)
+
+############ Data for Heuristic machine learning methods
+# normalize data (very important for ML techniques, but not for logistic regression)
+x.trainnorm=predict(preProcess(x.traindum, method = "range"), newdata=x.traindum)
+x.evaluatenorm=predict(preProcess(x.evaluatedum, method = "range"), newdata=x.evaluatedum)
+
+# adjust Baseformulea to the dummy version of the data
+varsin_dum=varsin[1:2]
+for(i in 3:length(varsin)){
+  if(!is.null(levels(x[,varsin[i]]))){
+    for(j in 2:nlevels(x[,varsin[i]])){ # first level will be considered as the base-level
+      varsin_dum=c(varsin_dum,paste(varsin[i],levels(x[,varsin[i]])[j],sep="."))
+    }
+  }else{
+    varsin_dum=c(varsin_dum,varsin[i])
+  }
+}
+
+# redo the releveling:
+x.traindum$ch_in_string=relevel(x.traindum$ch_in_string,ref="Noch_in") 
+x.evaluatedum$ch_in_string=relevel(x.evaluatedum$ch_in_string,ref="Noch_in")
+x.trainnorm$ch_in_string=relevel(x.trainnorm$ch_in_string,ref="Noch_in") 
+x.evaluatenorm$ch_in_string=relevel(x.evaluatenorm$ch_in_string,ref="Noch_in")
+
+BaseFormula_dum <- as.formula(paste0("ch_in_string~",paste(varsin_dum[-c(1,2)],collapse = "+")))
+BaseFormula1_dum <- as.formula(paste0("ch_in~",paste(varsin_dum[-c(1,2)],collapse = "+")))
+
+# set threshold probability: usually .5, but better is to set it to the portion of 1's. 
+probthres=mean(x.traindum$ch_in)
+
+################################ ML MODELS #################################
+
+######### LOGISTIC REGRESSION
+library(caret)
+ptm <- proc.time()
+x.modelLogit <- glm(BaseFormula_dum , data = x.traindum, family = "binomial") # estimating the probability of "checkin"
+
+summary(x.modelLogit)
+
+x.evaluate$predictionlogit <- predict(x.modelLogit, newdata=x.evaluatedum, type = "response")
+x.evaluate$predictionlogitclass[x.evaluate$predictionlogit>probthres] <- "ch_in"
+x.evaluate$predictionlogitclass[x.evaluate$predictionlogit<=probthres] <- "Noch_in"
+
+x.evaluate$correctlogit <- x.evaluate$predictionlogitclass == x.evaluate$ch_in_string
+print(paste("% of predicted classifications correct", mean(x.evaluate$correctlogit)))
+LogitOutput <- makeLiftPlot(x.evaluate$predictionlogit,x.evaluate,"Logit")
+
+TimeAux <- proc.time() - ptm 
+#LogitOutput$summary=summary(x.modelLogit)
+LogitOutput$TimeElapsed <- TimeAux[3]
+LogitOutput$PercCorrect <- mean(x.evaluate$correctlogit)*100
+Logitconfmatrix <- table(x.evaluate$predictionlogitclass,x.evaluate$ch_in_string)
+rm(TimeAux)
+
+############ Naive Bayes
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+ptm <- proc.time()
+x.modelNB <- train(BaseFormula_dum, data = x.trainnorm, method="naive_bayes")
+
+x.evaluate$predictionNB <- predict(x.modelNB, newdata=x.evaluatenorm,type="prob")
+
+
+x.evaluate$predictionNBclass[x.evaluate$predictionNB[,'ch_in']>probthres]="ch_in"
+x.evaluate$predictionNBclass[x.evaluate$predictionNB[,'ch_in']<=probthres]="Noch_in"
+
+x.evaluate$correctNB <- x.evaluate$predictionNBclass == x.evaluate$ch_in_string
+print(paste("% of predicted classifications correct", mean(x.evaluate$correctNB)))
+
+# the variable importance
+imp_NB <- (varImp(x.modelNB))
+plot(imp_NB, main='NB MODEL')
+
+
+# Extract the class probabilities.
+x.evaluate$predictionNB <- x.evaluate$predictionNB[,'ch_in']
+
+NBOutput <- makeLiftPlot(x.evaluate$predictionNB,x.evaluate,"NB")
+
+TimeAux <- proc.time() - ptm 
+NBOutput$TimeElapsed <- TimeAux[3]
+NBOutput$PercCorrect <- mean(x.evaluate$correctNB)*100
+NBconfmatrix <- table(x.evaluate$predictionNBclass,x.evaluate$ch_in_string)
+rm(TimeAux)
+stopCluster(cl)
+
+############ KNN
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+ptm <- proc.time()
+x.modelKNN <- train(BaseFormula_dum, data = x.trainnorm, method="knn")
+
+x.evaluate$predictionKNN <- predict(x.modelKNN, newdata=x.evaluatenorm,type="prob")
+
+
+x.evaluate$predictionKNNclass[x.evaluate$predictionKNN[,'ch_in']>probthres]="ch_in"
+x.evaluate$predictionKNNclass[x.evaluate$predictionKNN[,'ch_in']<=probthres]="Noch_in"
+
+x.evaluate$correctKNN <- x.evaluate$predictionKNNclass == x.evaluate$ch_in_string
+print(paste("% of predicted classifications correct", mean(x.evaluate$correctKNN)))
+
+# the variable importance
+imp_KNN <- (varImp(x.modelKNN))
+plot(imp_KNN, main="KNN MODEL")
+
+
+
+
+# Extract the class probabilities.
+x.evaluate$predictionKNN <- x.evaluate$predictionKNN[,'ch_in']
+
+KNNOutput <- makeLiftPlot(x.evaluate$predictionKNN,x.evaluate,"KNN")
+
+TimeAux <- proc.time() - ptm 
+KNNOutput$TimeElapsed <- TimeAux[3]
+KNNOutput$PercCorrect <- mean(x.evaluate$correctKNN)*100
+KNNconfmatrix <- table(x.evaluate$predictionKNNclass,x.evaluate$ch_in_string)
+rm(TimeAux)
+stopCluster(cl)
+
+
+############ SVM
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+ptm <- proc.time()
+# fast trainer
+x.modelSVM <- train(BaseFormula_dum, data = x.trainnorm, method="svmRadial", cachesize=12000, tolerance=.01,
+                    trControl = trainControl(classProbs =  TRUE))
+
+x.evaluate$predictionSVM <- predict(x.modelSVM, newdata=x.evaluatenorm, type="prob")
+
+
+x.evaluate$predictionSVMclass[x.evaluate$predictionSVM[,'ch_in']>probthres]="ch_in"
+x.evaluate$predictionSVMclass[x.evaluate$predictionSVM[,'ch_in']<=probthres]="Noch_in"
+
+x.evaluate$correctSVM <- x.evaluate$predictionSVMclass == x.evaluate$ch_in_string
+print(paste("% of predicted classifications correct", mean(x.evaluate$correctSVM)))
+
+# for fast trainer you can also get the variable importance
+
+imp_SVM <- (varImp(x.modelSVM))
+plot(x.modelSVM, main="SVM MODEL")
+
+
+# Extract the class probabilities.
+x.evaluate$predictionSVM <- x.evaluate$predictionSVM[,'ch_in']
+
+SVMOutput <- makeLiftPlot(x.evaluate$predictionSVM,x.evaluate,"SVM")
+
+TimeAux <- proc.time() - ptm 
+SVMOutput$TimeElapsed <- TimeAux[3]
+SVMOutput$PercCorrect <- mean(x.evaluate$correctSVM)*100
+SVMconfmatrix <- table(x.evaluate$predictionSVMclass,x.evaluate$ch_in_string)
+rm(TimeAux)
+stopCluster(cl)
+
+########## Neural network
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+library(NeuralNetTools) # required for plotting
+# fast trainer using parallel computations
+ptm <- proc.time()
+mlp_grid = expand.grid(layer1 = 5,
+                       layer2 = 0,
+                       layer3 = 0)
+x.modelNNet <- train(BaseFormula_dum, data=x.trainnorm, method='mlpML',tuneGrid=mlp_grid) 
+
+x.evaluate$predictionNNet <- predict(x.modelNNet, newdata = x.evaluatenorm, type="prob")
+
+x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]>probthres]="ch_in"
+x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]<=probthres]="Noch_in"
+
+
+x.evaluate$correctNNet <- x.evaluate$predictionNNetclass == x.evaluate$ch_in_string
+print(paste("% of predicted classifications correct", mean(x.evaluate$correctNNet)))
+
+imp_NNet<- (varImp(x.modelNNet))
+plot(imp_NNet, main="NNet MODEL")
+
+# plot NNet
+if(0){
+  NeuralNetTools::plotnet(x.modelNNet$finalModel)
+}
+x.evaluate$predictionNNet <- x.evaluate$predictionNNet[,"ch_in"]
+
+NNetOutput <- makeLiftPlot(x.evaluate$predictionNNet,x.evaluate,"Neural Network")
+
+TimeAux <- proc.time() - ptm 
+#NNetOutput$summary=varImp(x.modelNNet)
+NNetOutput$TimeElapsed <- TimeAux[3]
+NNetOutput$PercCorrect <- mean(x.evaluate$correctNNet)*100
+NNetconfmatrix <- table(x.evaluate$predictionNNetclass,x.evaluate$ch_in_string)
+rm(TimeAux)
+
+stopCluster(cl)
+
+########## TREE
+# fast model using parallel computation
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+ptm <- proc.time()
+x.modelTree <- train(BaseFormula_dum, data=x.trainnorm, method='ctree') 
+
+
+x.evaluate$predictionTree <- predict(x.modelTree, newdata = x.evaluatenorm, type = "prob")
+
+x.evaluate$predictionTreeClass[x.evaluate$predictionTree[,"ch_in"]>probthres]="ch_in"
+x.evaluate$predictionTreeClass[x.evaluate$predictionTree[,"ch_in"]<=probthres]="Noch_in"
+
+x.evaluate$predictionTreeClass <- factor(x.evaluate$predictionTreeClass, levels=c("Noch_in","ch_in"))
+
+x.evaluate$correctTree <- x.evaluate$predictionTreeClass == x.evaluate$ch_in_string
+print(paste("% of predicted classifications correct", mean(x.evaluate$correctTree)))
+
+x.evaluate$predictionTree <- x.evaluate$predictionTree[,"ch_in"]
+
+# to see the importance of the variables
+imp_Tree <- (varImp(x.modelTree))
+plot(imp_Tree, main="TREE MODEL")
+
+# plot tree, if desired 
+if(0){
+  plot(x.modelTree$finalModel)
+}
+
+TreeOutput <- makeLiftPlot(x.evaluate$predictionTree,x.evaluate,"Tree")
+
+TimeAux <- proc.time() - ptm 
+#TreeOutput$summary <- varImp(x.modelTree)
+TreeOutput$TimeElapsed <- TimeAux[3]
+TreeOutput$PercCorrect <- mean(x.evaluate$correctTree)*100
+Treeconfmatrix <- table(x.evaluate$predictionTreeClass,x.evaluate$ch_in_string)
+rm(TimeAux)
+
+stopCluster(cl)
+
+
+############ Bagging
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+ptm <- proc.time()
+# fast training using parallel computation
+x.modelBagging  <- train(BaseFormula_dum, data=x.trainnorm, method="treebag",importance=T)
+
+# Use the model to predict the evaluation.
+x.evaluate$predictionBagging <- predict(x.modelBagging, newdata=x.evaluatenorm, type="prob")
+
+x.evaluate$predictionBaggingClass[x.evaluate$predictionBagging[,"ch_in"]>probthres]="ch_in"
+x.evaluate$predictionBaggingClass[x.evaluate$predictionBagging[,"ch_in"]<=probthres]="Noch_in"
+
+x.evaluate$predictionBaggingClass <- factor(x.evaluate$predictionBaggingClass, levels=c("Noch_in","ch_in"))
+
+
+# Calculate the overall accuracy.
+x.evaluate$correctBagging <- x.evaluate$predictionBaggingClass == x.evaluate$ch_in_string
+print(paste("% of predicted classifications correct", mean(x.evaluate$correctBagging)))
+
+# Extract the class probabilities.
+x.evaluate$predictionBagging <- x.evaluate$predictionBagging[,"ch_in"]
+
+# to see the importance of the variables
+imp_Bagging <- (varImp(x.modelBagging))
+plot(imp_Bagging, main="BAGGING MODEL")
+
+
+BaggingOutput <- makeLiftPlot(x.evaluate$predictionBagging,x.evaluate,"Bagging")
+
+TimeAux <- proc.time() - ptm
+#BaggingOutput$summary <- varImp(x.modelBagging)
+BaggingOutput$TimeElapsed <- TimeAux[3]
+BaggingOutput$PercCorrect <- mean(x.evaluate$correctBagging)*100
+Baggingconfmatrix <- table(x.evaluate$predictionBaggingClass,x.evaluate$ch_in_string)
+rm(TimeAux)
+stopCluster(cl)
+
+
+
+############ Boosting
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+ptm <- proc.time()
+# Create a model using boosting ensemble algorithms
+# fast trainer using parallel computation
+x.modelBoosting  <- train(BaseFormula_dum, data=x.trainnorm, method = 'blackboost')#,  method = 'bstTree')
+
+# Use the model to predict the evaluation.
+x.evaluate$predictionBoosting <- predict(x.modelBoosting, newdata=x.evaluatenorm,type="prob")
+
+x.evaluate$predictionBoostingClass[x.evaluate$predictionBoosting[,"ch_in"]>probthres]="ch_in"
+x.evaluate$predictionBoostingClass[x.evaluate$predictionBoosting[,"ch_in"]<=probthres]="Noch_in"
+
+x.evaluate$predictionBoostingClass <- factor(x.evaluate$predictionBoostingClass, levels=c("Noch_in","ch_in"))
+
+
+# Calculate the overall accuracy.
+x.evaluate$correctBoosting <- x.evaluate$predictionBoostingClass == x.evaluate$ch_in_string
+print(paste("% of predicted classifications correct", mean(x.evaluate$correctBoosting)))
+
+# Extract the class probabilities.
+x.evaluate$predictionBoosting <- x.evaluate$predictionBoosting[,"ch_in"]
+
+# to see the importance of the variables
+imp_Boosting <- (varImp(x.modelBoosting))
+plot(imp_Boosting, main="BOOSTING MODEL")
+
+
+# Make a lift curve
+BoostingOutput <- makeLiftPlot(x.evaluate$predictionBoosting,x.evaluate,"Boosting")
+
+TimeAux <- proc.time() - ptm 
+#BoostingOutput$summary <- varImp(x.modelBoosting)
+BoostingOutput$TimeElapsed <- TimeAux[3]
+BoostingOutput$PercCorrect <- mean(x.evaluate$correctBoosting)*100
+Boostingconfmatrix <- table(x.evaluate$predictionBoostingClass,x.evaluate$ch_in_string)
+rm(TimeAux)
+
+stopCluster(cl)
+
+
+############ RANDOM FOREST
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+ptm <- proc.time()
+# Create a model using "random forest and bagging ensemble algorithms
+# a fast trainer using parallel computation
+x.modelRF <- train(BaseFormula_dum, data=x.trainnorm, method="parRF") 
+
+# Use the model to predict the evaluation.
+x.evaluate$predictionRF <- predict(x.modelRF, newdata=x.evaluatenorm, type = "prob")
+
+x.evaluate$predictionRFClass[x.evaluate$predictionRF[,"ch_in"]>probthres]="ch_in"
+x.evaluate$predictionRFClass[x.evaluate$predictionRF[,"ch_in"]<=probthres]="Noch_in"
+
+x.evaluate$predictionRFClass <- factor(x.evaluate$predictionRFClass, levels=c("Noch_in","ch_in"))
+
+
+# Calculate the overall accuracy.
+x.evaluate$correctRF <- x.evaluate$predictionRFClass == x.evaluate$ch_in_string
+print(paste("% of predicted classifications correct", mean(x.evaluate$correctRF)))
+
+# Extract the class probabilities.
+x.evaluate$predictionRF <- x.evaluate$predictionRF[,"ch_in"]
+
+# to see the importance of the variables
+imp_RF <- (varImp(x.modelRF))
+plot(imp_RF, main="RANDOM FOREST MODEL")
+
+RFOutput <- makeLiftPlot(x.evaluate$predictionRF,x.evaluate,"Random Forest")
+
+TimeAux <- proc.time() - ptm 
+#RFOutput$summary <- varImp(x.modelRF)
+RFOutput$TimeElapsed <- TimeAux[3]
+RFOutput$PercCorrect <- mean(x.evaluate$correctRF)*100
+RFconfmatrix <- table(x.evaluate$predictionRFClass,x.evaluate$ch_in_string)
+rm(TimeAux)
+stopCluster(cl)
+
+
+# SOME Summarizing plots:
+
+OverallTDL <- c(LogitOutput$TDL,SVMOutput$TDL,TreeOutput$TDL,BaggingOutput$TDL,BoostingOutput$TDL,RFOutput$TDL,NNetOutput$TDL)
+OverallGINI <- c(LogitOutput$GINI,SVMOutput$GINI,TreeOutput$GINI,BaggingOutput$GINI,BoostingOutput$GINI,RFOutput$GINI,NNetOutput$GINI)
+
+ForGraph <- data.frame(OverallTDL,OverallGINI)
+
+myLeftAxisLabs <- pretty(seq(0, max(ForGraph$OverallTDL), length.out = 10))
+myRightAxisLabs <- pretty(seq(0, max(ForGraph$OverallGINI), length.out = 10))
+
+myLeftAxisAt <- myLeftAxisLabs/max(ForGraph$OverallTDL)
+myRightAxisAt <- myRightAxisLabs/max(ForGraph$OverallGINI)
+
+ForGraph$OverallTDL1 <- ForGraph$OverallTDL/max(ForGraph$OverallTDL)
+ForGraph$OverallGINI1 <- ForGraph$OverallGINI/max(ForGraph$OverallGINI)
+
+op <- par(mar = c(5,4,4,4) + 0.1)
+
+barplot(t(as.matrix(ForGraph[, c("OverallTDL1", "OverallGINI1")])), beside = TRUE, yaxt = "n", names.arg = c("Logit","SVM","Tree","Bagging","Boosting","Random Forest","Neural Network"), ylim=c(0, max(c(myLeftAxisAt, myRightAxisAt))), ylab =	"Top Decile Lift", legend = c("TDL","GINI"), main="Performance of the Machine Learning Algorithms")
+
+axis(2, at = myLeftAxisAt, labels = myLeftAxisLabs)
+
+axis(4, at = myRightAxisAt, labels = myRightAxisLabs)
+
+mtext("GINI Coefficient", side = 4, line = 3, cex = par("cex.lab"))
+
+mtext(c(paste(round(LogitOutput$TimeElapsed,digits=2),"sec"),
+        paste(round(SVMOutput$TimeElapsed,digits=2),"sec"),
+        paste(round(TreeOutput$TimeElapsed,digits=2),"sec"),
+        paste(round(BaggingOutput$TimeElapsed,digits=2),"sec"),
+        paste(round(BoostingOutput$TimeElapsed,digits=2),"sec"),
+        paste(round(RFOutput$TimeElapsed,digits=2),"sec"),
+        paste(round(NNetOutput$TimeElapsed,digits=2),"sec")), side = 1, line = 3, cex = par("cex.lab"), at = c(2,5,8,11,14,17,20))
+mtext(c(paste(round(LogitOutput$PercCorrect,digits=0),"%"),
+        paste(round(SVMOutput$PercCorrect,digits=0),"%"),
+        paste(round(TreeOutput$PercCorrect,digits=0),"%"),
+        paste(round(BaggingOutput$PercCorrect,digits=0),"%"),
+        paste(round(BoostingOutput$PercCorrect,digits=0),"%"),
+        paste(round(RFOutput$PercCorrect,digits=0),"%"),
+        paste(round(NNetOutput$PercCorrect,digits=0),"%")), side = 1, line = 4, cex = par("cex.lab"), at = c(2,5,8,11,14,17,20))
+
+mtext("Calc. time", side = 1, line = 3, cex = par("cex.lab"), at = -.8)
+mtext("% correct", side = 1, line = 4, cex = par("cex.lab"), at = -.8)
+
+
+lift_obj=lift(ch_in_string~predictionBagging+predictionBoosting+predictionTree+predictionNNet+predictionSVM+predictionlogit,data=x.evaluate,class="ch_in")
+
+ggplot(lift_obj)
+
+#stargazer(x.modelLogit,x.modelNB,x.modelKNN, title='comparison', align =TRUE)
+
+####### MODEL TUNING ####### (WORK IN PROGRESS) Half var, half obs -> SVM performes best -> tune SVM
+
+########## Neural network
+
+library(doParallel)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+library(NeuralNetTools) # required for plotting
+
+# Define the range of layer combinations to loop through
+layer1_values <- c(4,8,12,16)
+layer2_values <- c(0,4,8)
+layer3_values <- c(0,4)
+
+
+# Create an empty data frame to store the results
+results <- data.frame(layer1 = integer(),
+                      layer2 = integer(),
+                      layer3 = integer(),
+                      GINI_coefficient = numeric(),
+                      TDL = numeric(),
+                      calculation_time = numeric(),
+                      percentage_correct_hits = numeric())
+
+# Loop through different layer combinations
+for (layer1 in layer1_values) {
+  for (layer2 in layer2_values) {
+    for (layer3 in layer3_values) {
+      set.seed(66)
+      ptm <- proc.time()
+      # Create the tuning grid for MLP
+      mlp_grid <- expand.grid(layer1 = layer1,
+                              layer2 = layer2,
+                              layer3 = layer3)
+      
+      x.modelNNet <- train(BaseFormula_dum, data=x.trainnorm, method='mlpML',tuneGrid=mlp_grid) 
+      
+      x.evaluate$predictionNNet <- predict(x.modelNNet, newdata = x.evaluatenorm, type="prob")
+      
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]>probthres]="ch_in"
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]<=probthres]="Noch_in"
+      
+      
+      x.evaluate$correctNNet <- x.evaluate$predictionNNetclass == x.evaluate$ch_in_string
+      print(paste("% of predicted classifications correct", mean(x.evaluate$correctNNet)))
+      
+      imp_NNet<- (varImp(x.modelNNet))
+      plot(imp_NNet, main="NNet MODEL")
+      
+      # plot NNet
+      if(0){
+        NeuralNetTools::plotnet(x.modelNNet$finalModel)
+      }
+      x.evaluate$predictionNNet <- x.evaluate$predictionNNet[,"ch_in"]
+      
+      NNetOutput <- makeLiftPlot(x.evaluate$predictionNNet,x.evaluate,"Neural Network")
+      
+      TimeAux <- proc.time() - ptm 
+      #NNetOutput$summary=varImp(x.modelNNet)
+      NNetOutput$TimeElapsed <- TimeAux[3]
+      NNetOutput$PercCorrect <- mean(x.evaluate$correctNNet)*100
+      NNetconfmatrix <- table(x.evaluate$predictionNNetclass,x.evaluate$ch_in_string)
+      rm(TimeAux)
+      
+      
+      GINI_coefficient <- NNetOutput$GINI
+      TDL <- NNetOutput$TDL
+      calculation_time <- NNetOutput$TimeElapsed
+      percentage_correct_hits <- NNetOutput$PercCorrect
+      
+      # Append the results to the data frame
+      results <- rbind(results, data.frame(layer1 = layer1,
+                                           layer2 = layer2,
+                                           layer3 = layer3,
+                                           GINI_coefficient = GINI_coefficient,
+                                           TDL = TDL,
+                                           calculation_time = calculation_time,
+                                           percentage_correct_hits = percentage_correct_hits))
+    }
+  }
+}
+
+# Stop the cluster
+stopCluster(cl)
+
+# Print the results
+print(results)
+write.csv(results, file = "C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v1.csv", row.names = FALSE)
+
+########## Neural network
+
+library(doParallel)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+library(NeuralNetTools) # required for plotting
+
+# Define the range of layer combinations to loop through
+layer1_values <- c(16,32)
+layer2_values <- c(0,2,4)
+layer3_values <- c(0,1,2)
+
+
+# Create an empty data frame to store the results
+results <- data.frame(layer1 = integer(),
+                      layer2 = integer(),
+                      layer3 = integer(),
+                      GINI_coefficient = numeric(),
+                      TDL = numeric(),
+                      calculation_time = numeric(),
+                      percentage_correct_hits = numeric())
+
+# Loop through different layer combinations
+for (layer1 in layer1_values) {
+  for (layer2 in layer2_values) {
+    for (layer3 in layer3_values) {
+      set.seed(66)
+      ptm <- proc.time()
+      # Create the tuning grid for MLP
+      mlp_grid <- expand.grid(layer1 = layer1,
+                              layer2 = layer2,
+                              layer3 = layer3)
+      
+      x.modelNNet <- train(BaseFormula_dum, data=x.trainnorm, method='mlpML',tuneGrid=mlp_grid) 
+      
+      x.evaluate$predictionNNet <- predict(x.modelNNet, newdata = x.evaluatenorm, type="prob")
+      
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]>probthres]="ch_in"
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]<=probthres]="Noch_in"
+      
+      
+      x.evaluate$correctNNet <- x.evaluate$predictionNNetclass == x.evaluate$ch_in_string
+      print(paste("% of predicted classifications correct", mean(x.evaluate$correctNNet)))
+      
+      imp_NNet<- (varImp(x.modelNNet))
+      plot(imp_NNet, main="NNet MODEL")
+      
+      # plot NNet
+      if(0){
+        NeuralNetTools::plotnet(x.modelNNet$finalModel)
+      }
+      x.evaluate$predictionNNet <- x.evaluate$predictionNNet[,"ch_in"]
+      
+      NNetOutput <- makeLiftPlot(x.evaluate$predictionNNet,x.evaluate,"Neural Network")
+      
+      TimeAux <- proc.time() - ptm 
+      #NNetOutput$summary=varImp(x.modelNNet)
+      NNetOutput$TimeElapsed <- TimeAux[3]
+      NNetOutput$PercCorrect <- mean(x.evaluate$correctNNet)*100
+      NNetconfmatrix <- table(x.evaluate$predictionNNetclass,x.evaluate$ch_in_string)
+      rm(TimeAux)
+      
+      
+      GINI_coefficient <- NNetOutput$GINI
+      TDL <- NNetOutput$TDL
+      calculation_time <- NNetOutput$TimeElapsed
+      percentage_correct_hits <- NNetOutput$PercCorrect
+      
+      # Append the results to the data frame
+      results <- rbind(results, data.frame(layer1 = layer1,
+                                           layer2 = layer2,
+                                           layer3 = layer3,
+                                           GINI_coefficient = GINI_coefficient,
+                                           TDL = TDL,
+                                           calculation_time = calculation_time,
+                                           percentage_correct_hits = percentage_correct_hits))
+    }
+  }
+}
+
+# Stop the cluster
+stopCluster(cl)
+
+# Print the results
+print(results)
+write.csv(results, file = "C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v2.csv", row.names = FALSE)
+
+tuning_v1 = read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v1.csv")
+tuning_v2 = read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v2.csv")
+
+tuning_complete = rbind(tuning_v1, tuning_v2)
+tuning_subset = tuning_complete[tuning_complete$GINI > 0.7 & tuning_complete$TDL > 4, ]
+stargazer(tuning_complete, summary =F)
+#To decide on the tuning parameter, we only look at combinations with GINI coefficients above 0.7 and a TDL
+#above 4. Now we look at the increase in time compared to the increase in accuracy. The highest accuracy 
+#corresponds to a time increase from the second highest accuracy of + 50% but only a slight increase of
+#0.7 pp in accuracy while losing in TDL and GINI. We now test which of the combinations lead to the best
+#results after running it a few times. We decide to use the 32,0,0 combination since it is more consistent
+
+########## Neural network
+
+library(doParallel)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+library(NeuralNetTools) # required for plotting
+
+# Define the range of layer combinations to loop through
+layer1_values <- c(32,32,32,32,32,32,32,32,32,32)
+layer2_values <- c(0)
+layer3_values <- c(0)
+
+
+# Create an empty data frame to store the results
+results <- data.frame(layer1 = integer(),
+                      layer2 = integer(),
+                      layer3 = integer(),
+                      GINI_coefficient = numeric(),
+                      TDL = numeric(),
+                      calculation_time = numeric(),
+                      percentage_correct_hits = numeric())
+
+# Loop through different layer combinations
+for (layer1 in layer1_values) {
+  for (layer2 in layer2_values) {
+    for (layer3 in layer3_values) {
+      ptm <- proc.time()
+      # Create the tuning grid for MLP
+      mlp_grid <- expand.grid(layer1 = layer1,
+                              layer2 = layer2,
+                              layer3 = layer3)
+      
+      x.modelNNet <- train(BaseFormula_dum, data=x.trainnorm, method='mlpML',tuneGrid=mlp_grid) 
+      
+      x.evaluate$predictionNNet <- predict(x.modelNNet, newdata = x.evaluatenorm, type="prob")
+      
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]>probthres]="ch_in"
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]<=probthres]="Noch_in"
+      
+      
+      x.evaluate$correctNNet <- x.evaluate$predictionNNetclass == x.evaluate$ch_in_string
+      print(paste("% of predicted classifications correct", mean(x.evaluate$correctNNet)))
+      
+      imp_NNet<- (varImp(x.modelNNet))
+      plot(imp_NNet, main="NNet MODEL")
+      
+      # plot NNet
+      if(0){
+        NeuralNetTools::plotnet(x.modelNNet$finalModel)
+      }
+      x.evaluate$predictionNNet <- x.evaluate$predictionNNet[,"ch_in"]
+      
+      NNetOutput <- makeLiftPlot(x.evaluate$predictionNNet,x.evaluate,"Neural Network")
+      
+      TimeAux <- proc.time() - ptm 
+      #NNetOutput$summary=varImp(x.modelNNet)
+      NNetOutput$TimeElapsed <- TimeAux[3]
+      NNetOutput$PercCorrect <- mean(x.evaluate$correctNNet)*100
+      NNetconfmatrix <- table(x.evaluate$predictionNNetclass,x.evaluate$ch_in_string)
+      rm(TimeAux)
+      
+      
+      GINI_coefficient <- NNetOutput$GINI
+      TDL <- NNetOutput$TDL
+      calculation_time <- NNetOutput$TimeElapsed
+      percentage_correct_hits <- NNetOutput$PercCorrect
+      
+      # Append the results to the data frame
+      results <- rbind(results, data.frame(layer1 = layer1,
+                                           layer2 = layer2,
+                                           layer3 = layer3,
+                                           GINI_coefficient = GINI_coefficient,
+                                           TDL = TDL,
+                                           calculation_time = calculation_time,
+                                           percentage_correct_hits = percentage_correct_hits))
+    }
+  }
+}
+
+# Stop the cluster
+stopCluster(cl)
+
+# Print the results
+print(results)
+write.csv(results, file = "C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v3.csv", row.names = FALSE)
+
+
+########## Neural network
+
+library(doParallel)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+library(NeuralNetTools) # required for plotting
+
+# Define the range of layer combinations to loop through
+layer1_values <- c(16,16,16,16,16,16,16,16,16,16)
+layer2_values <- c(4)
+layer3_values <- c(0)
+
+
+# Create an empty data frame to store the results
+results <- data.frame(layer1 = integer(),
+                      layer2 = integer(),
+                      layer3 = integer(),
+                      GINI_coefficient = numeric(),
+                      TDL = numeric(),
+                      calculation_time = numeric(),
+                      percentage_correct_hits = numeric())
+
+# Loop through different layer combinations
+for (layer1 in layer1_values) {
+  for (layer2 in layer2_values) {
+    for (layer3 in layer3_values) {
+      ptm <- proc.time()
+      # Create the tuning grid for MLP
+      mlp_grid <- expand.grid(layer1 = layer1,
+                              layer2 = layer2,
+                              layer3 = layer3)
+      
+      x.modelNNet <- train(BaseFormula_dum, data=x.trainnorm, method='mlpML',tuneGrid=mlp_grid) 
+      
+      x.evaluate$predictionNNet <- predict(x.modelNNet, newdata = x.evaluatenorm, type="prob")
+      
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]>probthres]="ch_in"
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]<=probthres]="Noch_in"
+      
+      
+      x.evaluate$correctNNet <- x.evaluate$predictionNNetclass == x.evaluate$ch_in_string
+      print(paste("% of predicted classifications correct", mean(x.evaluate$correctNNet)))
+      
+      imp_NNet<- (varImp(x.modelNNet))
+      plot(imp_NNet, main="NNet MODEL")
+      
+      # plot NNet
+      if(0){
+        NeuralNetTools::plotnet(x.modelNNet$finalModel)
+      }
+      x.evaluate$predictionNNet <- x.evaluate$predictionNNet[,"ch_in"]
+      
+      NNetOutput <- makeLiftPlot(x.evaluate$predictionNNet,x.evaluate,"Neural Network")
+      
+      TimeAux <- proc.time() - ptm 
+      #NNetOutput$summary=varImp(x.modelNNet)
+      NNetOutput$TimeElapsed <- TimeAux[3]
+      NNetOutput$PercCorrect <- mean(x.evaluate$correctNNet)*100
+      NNetconfmatrix <- table(x.evaluate$predictionNNetclass,x.evaluate$ch_in_string)
+      rm(TimeAux)
+      
+      
+      GINI_coefficient <- NNetOutput$GINI
+      TDL <- NNetOutput$TDL
+      calculation_time <- NNetOutput$TimeElapsed
+      percentage_correct_hits <- NNetOutput$PercCorrect
+      
+      # Append the results to the data frame
+      results <- rbind(results, data.frame(layer1 = layer1,
+                                           layer2 = layer2,
+                                           layer3 = layer3,
+                                           GINI_coefficient = GINI_coefficient,
+                                           TDL = TDL,
+                                           calculation_time = calculation_time,
+                                           percentage_correct_hits = percentage_correct_hits))
+    }
+  }
+}
+
+# Stop the cluster
+stopCluster(cl)
+
+# Print the results
+print(results)
+write.csv(results, file = "/Users/manuelscionti/Desktop/Yelp/tuning_v4.csv", row.names = FALSE)
+
+
+tuning_v3 = read.csv("/Users/manuelscionti/Desktop/Yelp/tuning_v3.csv")
+tuning_v4 = read.csv("/Users/manuelscionti/Desktop/Yelp/tuning_v4.csv")
+
+
+stargazer(tuning_v3, median = T) #higher gini, tdl and hitrate -> 32 layers
+stargazer(tuning_v4, median = T) 
+
+install.packages("pdp")
+library(pdp)
+
+partial(x.modelNNet, pred.var = "cum_n_review", plot = T, levelplot = TRUE, plot.lines = TRUE)
+
+partial(x.modelNNet, pred.var = "cum_n_tips", plot = T, levelplot = TRUE, plot.lines = TRUE)
+
+partial(x.modelNNet, pred.var = "avg_tips_stars",  plot = T, levelplot = TRUE)
+
+partial(x.modelNNet, pred.var = "n_photo",  plot = T, levelplot = TRUE)
+
+
+
