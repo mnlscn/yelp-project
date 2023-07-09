@@ -216,91 +216,6 @@ WHERE t_bp.business_id = t_ruc.business_id;
 
 
 
-##########################################################################################
-2.1) SQL code to get the reviews
-##########################################################################################
--- SQL for reviews, merged with user information.
-
-SELECT 
-rev.j ->> 'date' AS date,
-rev.j ->> 'business_id' AS business_id,
-rev.j ->> 'text' AS Review,
-rev.j ->> 'user_id' AS user_id,
-rev.j ->> 'stars' AS stars,
-usr.j ->> 'elite' AS elite_user,
-usr.j ->> 'friends' AS friends,
-usr.j ->> 'name' AS name,
-usr.j ->> 'fans' AS fans
-FROM
-public.review AS rev
-INNER JOIN
-public.business AS bus ON rev.j ->> 'business_id' = bus.j ->> 'business_id'
-INNER JOIN
-public.users AS usr ON rev.j ->> 'user_id' = usr.j ->> 'user_id'
-WHERE
-rev.j ->> 'business_id' = bus.j ->> 'business_id' 
-AND bus.j ->> 'city' = 'Akron'
-
-##########################################################################################
-2.2) R code to process the review data and merge it to the main dataframe
-##########################################################################################
-
-## Written by Jasper Stuerwald
-## last update 05.07.2023
-library(gender)
-#remotes::install_github("ropensci/gender-data-pkg")
-library(genderdata)
-library(dplyr)
-
-#Load in the extracted dataframe 
-# data exctracted using the review_data_akron.sql query.
-rtA = read.csv("review_data_akron.csv")
-
-#Review by Elite User
-rtA$elite_status <- ifelse(!is.na(rtA$elite_user), 1, 0)
-#Friends count of the user that wrote the review
-rtA$friends <- ifelse(is.na(rtA$friends) | rtA$friends == "None", NA, rtA$friends)
-rtA$friends_count <- ifelse(!is.na(rtA$friends),stringr::str_count(rtA$friends, ",") + 1,0)
-#gender
-gender_vector = gender(rtA$name)
-unique_rows  = !duplicated(gender_vector)
-gender_vector = gender_vector[unique_rows,][c(1,4)]
-rtA = merge(rtA, gender_vector, by = "name", all.x = TRUE)
-
-#Get the dynamic data
-rtA$date = as.Date(rtA$date)
-#First divide the dataframe into everything up to the start date of the final dataframe and everything after that date to the enddate of the df
-
-start_date <- as.Date("2018-01-01")  # Start date of the range
-end_date <- as.Date("2018-11-14")    # End date of the range
-
-date_range <- seq(start_date, end_date, by = "day")  # Create a sequence of dates
-
-results <- data.frame()  # Create an empty dataframe to store the results
-
-for (i in seq_along(date_range)) {
-  date <- date_range[i]
-  
-  rtA_filtered <- rtA[rtA$date < date,]
-  
-  rtA_grouped <- rtA_filtered %>%
-    group_by(business_id) %>%
-    summarize(
-      #avg_sentiment_score_review = mean(sentiment_score_review),
-      sum_elite_status = sum(elite_status),
-      max_friends_count = max(friends_count),
-      num_male = sum(gender == "male", na.rm = TRUE),
-      num_female = sum(gender == "female", na.rm = TRUE),
-      sum_fans = sum(fans, na.rm = TRUE),
-      avg_stars = mean(stars, na.rm = TRUE),
-      review_count = n()
-    ) %>%
-    mutate(date = as.Date(date))
-  
-  rtA_grouped <- mutate(rtA_grouped, date = date)
-  
-  results <- bind_rows(results, rtA_grouped)  # Append the results to the dataframe
-}
 
 ##########################################################################################
 3) R code to extract weather data
@@ -821,6 +736,228 @@ m1=glm(ch_in~cum_n_tips+cum_max_friends+cum_max_us_fans+cum_max_us_tip+I((male+1
 car::vif(m1)
 summary(m1)
 
+##########################################################################################
+7) SQL table extraction -- Business table, Review table, Attributes table
+##########################################################################################
+
+Impossibile creare, modificare o caricare file … Non hai spazio di archiviazione sufficiente per creare, modificare e caricare file. Ottieni 100 GB di spazio di archiviazione a 1,99 € 0,49 € per 1 mese.
+SQLQuery.txt
+#####Review data with user data (RTAkr)####
+SELECT 
+    rev.j ->> 'date' AS date,
+    rev.j ->> 'business_id' AS business_id,
+    rev.j ->> 'text' AS Review,
+    rev.j ->> 'user_id' AS user_id,
+    rev.j ->> 'stars' AS stars,
+    usr.j ->> 'elite' AS elite_user,
+    usr.j ->> 'friends' AS friends,
+    usr.j ->> 'name' AS name,
+    usr.j ->> 'fans' AS fans
+FROM
+    public.review AS rev
+INNER JOIN
+    public.business AS bus ON rev.j ->> 'business_id' = bus.j ->> 'business_id'
+INNER JOIN
+    public.users AS usr ON rev.j ->> 'user_id' = usr.j ->> 'user_id'
+WHERE
+    rev.j ->> 'business_id' = bus.j ->> 'business_id' 
+    AND bus.j ->> 'city' = 'Akron'
+    AND rev.j ->> 'date' <= '2018-11-14'
+;
+
+#########Attributes table (ATAkr)######
+SELECT 
+  ((j->>'attributes')::json) ->> 'WiFi' AS WiFi,
+  ((j->>'attributes')::json) ->> 'TV' AS tv,
+  ((j -> 'attributes')::json) ->> 'NoiseLevel' AS noise, 
+  ((j -> 'attributes')::json) ->> 'RestaurantsGoodForGroups' AS goodforgroups,
+  ((j -> 'attributes')::json) ->> 'OutdoorSeating' AS outdoorseating, 
+  ((j -> 'attributes')::json) ->> 'BusinessAcceptsCreditCards' AS creditcardpayment, 
+  ((j -> 'attributes')::json) ->> 'Alcohol' AS alcohol, 
+  ((j -> 'attributes')::json) ->> 'BikeParking' AS bikeparking, 
+  j ->> 'business_id' AS business_id 
+FROM public.business
+WHERE 
+  j->>'city' = 'Akron'
+;
+
+
+#########Business Table(BTAkr)######
+SELECT 
+  j ->> 'business_id' AS business_id,
+  j ->> 'name' AS bus_name,
+  j ->> 'city' AS city,
+  j ->> 'stars' AS stars,
+  j ->> 'review_count' AS review_count
+FROM public.business
+WHERE 
+  j->>'city' = 'Akron'
+;
+##########################################################################################
+7) Python code -- Sentiment analysis of review text
+##########################################################################################
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Jun 15 10:36:08 2023
+
+@author: jaspe
+"""
+
+####Text analysis for DAMA########
+import pandas as pd
+from textblob import TextBlob
+
+
+
+#Review Analysis
+rtA = pd.read_csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/RTAKr.csv")
+# Define the sentiment analysis function
+def get_sentiment(text):
+    blob = TextBlob(text)
+    return blob.sentiment.polarity
+#Change the datatype
+rtA['review'] = rtA['review'].apply(TextBlob)
+#Setniment for reviews
+rtA['sentiment_score_review'] = rtA['review'].apply(lambda x: x.sentiment.polarity)
+#save for further preparation within R
+rtA.to_csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/RTAKr_with_sentiment.csv")
+
+##########################################################################################
+7) R code -- Yelp_dataset_creation
+##########################################################################################
+library(readr)
+library(gender)
+library(stringr)
+library(dplyr)
+library(tidyr)
+library(mice)
+library(parallel)
+
+btA = read_csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/BTAkr.csv")
+rtA = read_csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/RTAkr_with_sentiment.csv")
+df = read_csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/yelp_data_tip_weather.csv")
+atA = read_csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/ATAkr.csv")
+
+df = merge(df, atA, by = "business_id", all.x = T)
+df = merge(df, btA, by = "business_id", all.x = T)
+df$weekdays = weekdays(df$date)
+
+is_word_present <- function(string, word) {
+  as.integer(grepl(word, string))
+}
+
+df$weekend = ifelse(df$weekdays %in% c("Freitag", "Samstag", "Sonntag"), 1, 0)
+
+#Reshape the rtA so that we receive dynamic data on the reviews for every business within our timeframe
+#First we need to extract all information on users, reviews and
+
+#Review by Elite User
+rtA$elite_status <- ifelse(!is.na(rtA$elite_user), 1, 0)
+#Friends count of the user that wrote the review
+rtA$friends <- ifelse(is.na(rtA$friends) | rtA$friends == "None", NA, rtA$friends)
+rtA$friends_count <- ifelse(!is.na(rtA$friends),str_count(rtA$friends, ",") + 1,0)
+#gender
+gender_vector = gender(rtA$name)
+unique_rows  = !duplicated(gender_vector)
+gender_vector = gender_vector[unique_rows,][c(1,4)]
+rtA = merge(rtA, gender_vector, by = "name", all.x = TRUE)
+
+
+
+#Get the dynamic data
+rtA$date = as.Date(rtA$date)
+#First divide the dataframe into everything up to the start date of the final dataframe and everything after that date to the enddate of the df
+
+start_date <- as.Date("2018-01-01")  # Start date of the range
+end_date <- as.Date("2018-11-14")    # End date of the range
+
+date_range <- seq(start_date, end_date, by = "day")  # Create a sequence of dates
+
+results <- data.frame()  # Create an empty dataframe to store the results
+
+
+
+
+for (i in seq_along(date_range)) {
+  date <- date_range[i]
+
+  rtA_filtered <- rtA[rtA$date < date,]
+  
+  rtA_grouped <- rtA_filtered %>%
+    group_by(business_id) %>%
+    summarize(
+      avg_sentiment_score_review = mean(sentiment_score_review),
+      sum_elite_status = sum(elite_status),
+      max_friends_count = max(friends_count),
+      num_male = sum(gender == "male", na.rm = TRUE),
+      num_female = sum(gender == "female", na.rm = TRUE),
+      sum_fans = sum(fans, na.rm = TRUE),
+      avg_stars = mean(stars, na.rm = TRUE),
+      review_count = n()
+    ) %>%
+    mutate(date = as.Date(date))
+  
+  rtA_grouped <- mutate(rtA_grouped, date = date)
+  
+  results <- bind_rows(results, rtA_grouped)  # Append the results to the dataframe
+}
+
+
+#Check whether it worked by looking into the differences in review counts
+results_grouped <- results %>%
+  group_by(business_id) %>%
+  summarize(variance_review_count = var(review_count))
+
+
+
+# Creating bus_date_ident column for rtA dataframe
+df$identifier = paste(df$business_id, df$date, sep = "-")
+# Creating bus_date_ident column for results dataframe
+results$identifier = paste(results$business_id, results$date, sep = "-")
+#Merge the data
+merged_df <- merge(df, results, by = "identifier", all.x = TRUE)
+
+#Clean dataframe
+columns_to_drop <- c(55, 1, 3, 46)
+merged_df <- merged_df[, -columns_to_drop]
+
+
+#Some data on the noise is missing -> take care of missing values with the mice package
+
+
+#Create the variables
+merged_df$wifi_dummy <- ifelse(grepl("free", merged_df$wifi, ignore.case = T), 1,
+                               ifelse(grepl("no", merged_df$wifi, ignore.case = T), 0, NA))
+#create tv dummy
+merged_df$tv_dummy <- ifelse(grepl("True", merged_df$tv, ignore.case = TRUE), 1,
+                               ifelse(grepl("False", merged_df$tv, ignore.case = TRUE), 0, NA))
+#level variables for noise
+merged_df$noise_level <- ifelse(grepl("loud", merged_df$noise), 3,
+                         ifelse(grepl("average", merged_df$noise), 2,
+                                ifelse(grepl("quiet", merged_df$noise), 1, NA)))
+#Bikeparking 1 0
+merged_df$bikeparking_dummy <- ifelse(grepl("True", merged_df$bikeparking, ignore.case = TRUE), 1,
+                             ifelse(grepl("False", merged_df$bikeparking, ignore.case = TRUE), 0, NA))
+#goodforgroups
+merged_df$goodforgroups_dummy <- ifelse(grepl("True", merged_df$goodforgroups, ignore.case = TRUE), 1,
+                                      ifelse(grepl("False", merged_df$goodforgroups, ignore.case = TRUE), 0, NA))
+#outdoorseating
+merged_df$outdoorseating_dummy <- ifelse(grepl("True", merged_df$outdoorseating, ignore.case = TRUE), 1,
+                                        ifelse(grepl("False", merged_df$outdoorseating, ignore.case = TRUE), 0, NA))
+#creditcardpayment
+merged_df$creditcardpayment_dummy <- ifelse(grepl("True", merged_df$creditcardpayment, ignore.case = TRUE), 1,
+                                         ifelse(grepl("False", merged_df$creditcardpayment, ignore.case = TRUE), 0, NA))
+#Alcohol
+merged_df$alcohol_dummy <- ifelse(grepl("NULL", merged_df$alcohol, ignore.case = TRUE), NA,
+                           ifelse(grepl("none", merged_df$alcohol, ignore.case = TRUE), 0, 1))
+
+# Create the MICE imputation model
+imputation_model <- mice(merged_df, method = "pmm")
+
+# Perform the imputation
+df_complete <- complete(imputation_model)
+write.csv(df_complete, "C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/df_complete.csv", row.names = T)
+
 
 ##########################################################################################
 7) Exploratory Analysis & Preprocessing & Machine Learning
@@ -838,18 +975,13 @@ library(smotefamily)
 library(stargazer) #Create a ready to use table in LaTeX style
 # https://www.r-bloggers.com/2013/01/stargazer-package-for-beautiful-latex-tables-from-r-statistical-models-output/
 library(MASS)
+library(pdp)
 
-setwd("/Users/manuelscionti/Desktop/Yelp/")
-source("DailyLevelData_analysis_functions.r")
+
+source("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/DailyLevelData_analysis_functions.r")
 
 # Loading the dataset
-yelp_data<-read.csv("/Users/manuelscionti/Desktop/Yelp/df_complete.csv")
-
-
-# source("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/DailyLevelData_analysis_functions.r")
-# 
-# # Loading the dataset
-# yelp_data<-read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/df_complete.csv")
+yelp_data<-read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/df_complete.csv")
 
 ########## EXPLORATORY ANALYSIS ###################
 
@@ -976,14 +1108,14 @@ corrplot(correlation.matrix, method="color", type="upper",tl.col = "black",)
 
 library(MASS)
 
-# # Specify your initial full model with all potential predictor variables
-# full_model <- glm(ch_in~.-ch_in_string, data = yelp_data, family = binomial)
-# 
-# # Perform stepwise variable selection using AIC
-# stepwise_model <- stepAIC(full_model, direction = "both")
-# 
-# # View the selected variables in the final model
-# print(stepwise_model)
+# Specify your initial full model with all potential predictor variables
+full_model <- glm(ch_in~.-ch_in_string, data = yelp_data, family = binomial)
+
+# Perform stepwise variable selection using AIC
+stepwise_model <- stepAIC(full_model, direction = "both")
+
+# View the selected variables in the final model
+print(stepwise_model)
 
 
 # A simple regression analysis ----
@@ -1037,7 +1169,7 @@ stargazer(yelp_data_AIC)
 yelp_data=subset(yelp_data,select=varsin)
 
 # set "/1" for full dataset size
-datasetsize=nrow(yelp_data)/20 # would you like to work only  on a subset of your data? 
+datasetsize=nrow(yelp_data)/2 # would you like to work only  on a subset of your data? 
 x <- yelp_data[sample(1:nrow(yelp_data), datasetsize, replace = F),]
 x.train <- x[1:floor(nrow(x)*.75), ]
 x.evaluate <- x[(floor(nrow(x)*.75)+1):nrow(x), ]
@@ -1206,7 +1338,7 @@ print(paste("% of predicted classifications correct", mean(x.evaluate$correctSVM
 
 imp_SVM <- (varImp(x.modelSVM))
 plot(x.modelSVM, main="SVM MODEL")
-
+plot(imp_SVM, main="SVM MODEL")
 
 # Extract the class probabilities.
 x.evaluate$predictionSVM <- x.evaluate$predictionSVM[,'ch_in']
@@ -1227,7 +1359,7 @@ registerDoParallel(cl)
 library(NeuralNetTools) # required for plotting
 # fast trainer using parallel computations
 ptm <- proc.time()
-mlp_grid = expand.grid(layer1 = 5,
+mlp_grid = expand.grid(layer1 = 32,
                        layer2 = 0,
                        layer3 = 0)
 x.modelNNet <- train(BaseFormula_dum, data=x.trainnorm, method='mlpML',tuneGrid=mlp_grid) 
@@ -1429,8 +1561,8 @@ stopCluster(cl)
 
 # SOME Summarizing plots:
 
-OverallTDL <- c(LogitOutput$TDL,SVMOutput$TDL,TreeOutput$TDL,BaggingOutput$TDL,BoostingOutput$TDL,RFOutput$TDL,NNetOutput$TDL)
-OverallGINI <- c(LogitOutput$GINI,SVMOutput$GINI,TreeOutput$GINI,BaggingOutput$GINI,BoostingOutput$GINI,RFOutput$GINI,NNetOutput$GINI)
+OverallTDL <- c(LogitOutput$TDL,SVMOutput$TDL,KNNOutput$TDL, TreeOutput$TDL,NBOutput$TDL,BaggingOutput$TDL,BoostingOutput$TDL,RFOutput$TDL,NNetOutput$TDL)
+OverallGINI <- c(LogitOutput$GINI,SVMOutput$GINI,KNNOutput$GINI,TreeOutput$GINI,NBOutput$GINI,BaggingOutput$GINI,BoostingOutput$GINI,RFOutput$GINI,NNetOutput$GINI)
 
 ForGraph <- data.frame(OverallTDL,OverallGINI)
 
@@ -1445,7 +1577,7 @@ ForGraph$OverallGINI1 <- ForGraph$OverallGINI/max(ForGraph$OverallGINI)
 
 op <- par(mar = c(5,4,4,4) + 0.1)
 
-barplot(t(as.matrix(ForGraph[, c("OverallTDL1", "OverallGINI1")])), beside = TRUE, yaxt = "n", names.arg = c("Logit","SVM","Tree","Bagging","Boosting","Random Forest","Neural Network"), ylim=c(0, max(c(myLeftAxisAt, myRightAxisAt))), ylab =	"Top Decile Lift", legend = c("TDL","GINI"), main="Performance of the Machine Learning Algorithms")
+barplot(t(as.matrix(ForGraph[, c("OverallTDL1", "OverallGINI1")])), beside = TRUE, yaxt = "n", names.arg = c("Logit","SVM","KNN","Tree","NB","Bagging","Boosting","Random Forest","Neural Network"), ylim=c(0, max(c(myLeftAxisAt, myRightAxisAt))), ylab =	"Top Decile Lift", legend = c("TDL","GINI"), main="Performance of the Machine Learning Algorithms")
 
 axis(2, at = myLeftAxisAt, labels = myLeftAxisLabs)
 
@@ -1455,24 +1587,28 @@ mtext("GINI Coefficient", side = 4, line = 3, cex = par("cex.lab"))
 
 mtext(c(paste(round(LogitOutput$TimeElapsed,digits=2),"sec"),
         paste(round(SVMOutput$TimeElapsed,digits=2),"sec"),
-        paste(round(TreeOutput$TimeElapsed,digits=2),"sec"),
+        paste(round(KNNOutput$TimeElapsed,digits = 2),"sec"),
+        paste(round(TreeOutput$TimeElapsed,digits = 2),"sec"),
+        paste(round(NBOutput$TimeElapsed,digits = 2),"sec"),
         paste(round(BaggingOutput$TimeElapsed,digits=2),"sec"),
         paste(round(BoostingOutput$TimeElapsed,digits=2),"sec"),
         paste(round(RFOutput$TimeElapsed,digits=2),"sec"),
-        paste(round(NNetOutput$TimeElapsed,digits=2),"sec")), side = 1, line = 3, cex = par("cex.lab"), at = c(2,5,8,11,14,17,20))
+        paste(round(NNetOutput$TimeElapsed,digits=2),"sec")), side = 1, line = 3, cex = par("cex.lab"), at = c(2,5,8,11,14,17,20,23,26))
 mtext(c(paste(round(LogitOutput$PercCorrect,digits=0),"%"),
         paste(round(SVMOutput$PercCorrect,digits=0),"%"),
-        paste(round(TreeOutput$PercCorrect,digits=0),"%"),
+        paste(round(KNNOutput$PercCorrect,digits = 2),"%"),
+        paste(round(TreeOutput$PercCorrect,digits = 2),"%"),
+        paste(round(NBOutput$PercCorrect,digits = 2),"%"),
         paste(round(BaggingOutput$PercCorrect,digits=0),"%"),
         paste(round(BoostingOutput$PercCorrect,digits=0),"%"),
         paste(round(RFOutput$PercCorrect,digits=0),"%"),
-        paste(round(NNetOutput$PercCorrect,digits=0),"%")), side = 1, line = 4, cex = par("cex.lab"), at = c(2,5,8,11,14,17,20))
+        paste(round(NNetOutput$PercCorrect,digits=0),"%")), side = 1, line = 4, cex = par("cex.lab"), at = c(2,5,8,11,14,17,20,23,26))
 
 mtext("Calc. time", side = 1, line = 3, cex = par("cex.lab"), at = -.8)
 mtext("% correct", side = 1, line = 4, cex = par("cex.lab"), at = -.8)
 
 
-lift_obj=lift(ch_in_string~predictionBagging+predictionBoosting+predictionTree+predictionNNet+predictionSVM+predictionlogit,data=x.evaluate,class="ch_in")
+lift_obj=lift(ch_in_string~predictionRF+predictionNB+predictionKNN+predictionBagging+predictionBoosting+predictionTree+predictionNNet+predictionSVM+predictionlogit,data=x.evaluate,class="ch_in")
 
 ggplot(lift_obj)
 
@@ -1841,26 +1977,202 @@ stopCluster(cl)
 
 # Print the results
 print(results)
-write.csv(results, file = "/Users/manuelscionti/Desktop/Yelp/tuning_v4.csv", row.names = FALSE)
+write.csv(results, file = "C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v4.csv", row.names = FALSE)
 
 
-tuning_v3 = read.csv("/Users/manuelscionti/Desktop/Yelp/tuning_v3.csv")
-tuning_v4 = read.csv("/Users/manuelscionti/Desktop/Yelp/tuning_v4.csv")
+tuning_v3 = read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v3.csv")
+tuning_v4 = read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v4.csv")
 
 
 stargazer(tuning_v3, median = T) #higher gini, tdl and hitrate -> 32 layers
 stargazer(tuning_v4, median = T) 
 
-install.packages("pdp")
-library(pdp)
 
+#Partial dependency plot for the most interesting features. Cum_n_review, Cum_n_tips, n_photo, results are all over the place
+#For business recommendation we therefore look again at the logit regression but take all variables into account
 partial(x.modelNNet, pred.var = "cum_n_review", plot = T, levelplot = TRUE, plot.lines = TRUE)
 
 partial(x.modelNNet, pred.var = "cum_n_tips", plot = T, levelplot = TRUE, plot.lines = TRUE)
 
-partial(x.modelNNet, pred.var = "avg_tips_stars",  plot = T, levelplot = TRUE)
 
 partial(x.modelNNet, pred.var = "n_photo",  plot = T, levelplot = TRUE)
 
+####################Run the same code again to receive the Full Logit table###############
 
 
+source("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/DailyLevelData_analysis_functions.r")
+
+# Loading the dataset
+yelp_data<-read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/df_complete.csv")
+
+
+#Let's drop some not useful variables for our ML analysis
+yelp_data <- subset(yelp_data, select = -c(X
+                                           ,WE
+                                           ,business_id.x
+                                           ,date.x
+                                           ,bus_name
+                                           ,city
+                                           ,wifi
+                                           ,tv
+                                           ,noise
+                                           ,goodforgroups
+                                           ,outdoorseating
+                                           ,creditcardpayment
+                                           ,alcohol
+                                           ,bikeparking
+                                           ,weekdays
+                                           ,review_count.y) )
+
+yelp_data$ch_in_string[yelp_data$ch_in>=1]="ch_in"
+yelp_data$ch_in_string[yelp_data$ch_in==0]="Noch_in"
+yelp_data$ch_in_string <- as.factor(yelp_data$ch_in_string)
+yelp_data$ch_in_string <- relevel(yelp_data$ch_in_string,ref="Noch_in")
+
+# 1) Cast all the variables with their right datatype
+yelp_data$business_park <- factor(yelp_data$business_park, levels = c('TRUE', 'FALSE'), labels = c("1", "0"))
+yelp_data$business_park <- as.numeric(yelp_data$business_park)-1
+yelp_data$business_cat <- factor(yelp_data$business_cat)
+yelp_data$Quarter <- factor(yelp_data$Quarter)
+yelp_data$business_open=factor(yelp_data$business_open)
+yelp_data$business_open <- as.numeric(yelp_data$business_open)-1
+
+#Create Male/Female ratio tips
+yelp_data$male_to_female_tips_ratio = (yelp_data$male + 1)/(yelp_data$female+ 1)
+#Create Male/Female ratio reviews
+yelp_data$male_to_female_review_ratio = (yelp_data$num_male + 1) / (yelp_data$num_female + 1)
+#Drop the now unimportant columns with the absolute numbers of male and female contributers
+yelp_data <- subset(yelp_data, select = -c(male, female, num_male, num_female))
+
+# Rename the "stars" column to "avg_tips_stars"
+colnames(yelp_data)[colnames(yelp_data) == "stars"] <- "avg_tips_stars"
+
+# Rename the "avg_stars" column to "avg_review_stars"
+colnames(yelp_data)[colnames(yelp_data) == "avg_stars"] <- "avg_review_stars"
+
+# Rename the "review_count.x" column to "avg_review_stars"
+colnames(yelp_data)[colnames(yelp_data) == "review_count.x"] <- "cum_n_review"
+
+str(yelp_data)
+View(yelp_data)
+
+physical_attr <- c("ch_in","business_price", "business_open", "business_park","business_cat"
+                   ,"wifi_dummy","tv_dummy","bikeparking_dummy","goodforgroups_dummy"
+                   ,"outdoorseating_dummy","creditcardpayment_dummy","noise_level","alcohol_dummy")
+
+social_attr <- c("ch_in","cum_n_tips","cum_max_friends","cum_max_u_elite","cum_max_us_fans","cum_max_us_tip"
+                 ,"avg_tips_stars","cum_n_review","avg_sentiment_score_review","sum_elite_status","max_friends_count"
+                 ,"male_to_female_tips_ratio","sum_fans","avg_review_stars","male_to_female_review_ratio","n_photo")
+
+external_attr <- c("ch_in","business_lat","business_long","PRCP","SNOW","SNWD","TMAX",
+                   "TMIN","TOBS","TOBS_1","TOBS_2","TOBS_3","TOBS_4","Quarter","weekend")
+
+yelp_data_physical=subset(yelp_data,select=physical_attr)
+yelp_data_social=subset(yelp_data,select=social_attr)
+yelp_data_external=subset(yelp_data,select=external_attr)
+
+
+
+set.seed(66)
+yelp_data_na=yelp_data
+
+
+
+
+
+varsin = c("ch_in_string","ch_in","business_price", "business_open", "business_park","business_cat"
+          ,"wifi_dummy","tv_dummy","bikeparking_dummy","goodforgroups_dummy"
+         ,"outdoorseating_dummy","creditcardpayment_dummy","noise_level","alcohol_dummy","n_photo"
+        ,"cum_n_tips","cum_max_friends","cum_max_u_elite","cum_max_us_fans","cum_max_us_tip"
+      ,"avg_tips_stars","cum_n_review","avg_sentiment_score_review","sum_elite_status","max_friends_count"
+     ,"male_to_female_tips_ratio","sum_fans","avg_review_stars","male_to_female_review_ratio"
+    ,"business_lat","business_long","PRCP","SNOW","SNWD","TMAX"
+   ,"TMIN","TOBS","TOBS_1","TOBS_2","TOBS_3","TOBS_4","Quarter","weekend")
+
+yelp_data=subset(yelp_data,select=varsin)
+
+# set "/1" for full dataset size
+datasetsize=nrow(yelp_data) # would you like to work only  on a subset of your data? 
+x <- yelp_data[sample(1:nrow(yelp_data), datasetsize, replace = F),]
+x.train <- x[1:floor(nrow(x)*.75), ]
+x.evaluate <- x[(floor(nrow(x)*.75)+1):nrow(x), ]
+
+BaseFormula <- as.formula(paste0("ch_in_string~",paste(varsin[-c(1,2)],collapse = "+")))
+BaseFormula1 <- as.formula(paste0("ch_in~",paste(varsin[-c(1,2)],collapse = "+")))
+
+
+# create dummies (required for SMOTE)
+x.traindum=cbind(x.train[,c("ch_in","ch_in_string")],predict(dummyVars(BaseFormula1,data=x.train),newdata = x.train))
+x.evaluatedum=cbind(x.evaluate[,c("ch_in","ch_in_string")],predict(dummyVars(BaseFormula1,data=x.evaluate),newdata = x.evaluate))
+
+# class imbalance check.
+temp=table(x.train[,"ch_in_string"])
+print(temp)
+
+if(1){
+  x.traindum_smote=SMOTE(x.traindum[,-c(1,2)],x.traindum[,2])$data
+  names(x.traindum_smote)[ncol(x.traindum_smote)]="ch_in_string"
+  x.traindum_smote$ch_in=ifelse(x.traindum_smote$ch_in_string=="ch_in",1,0)
+  x.traindum_smote$ch_in_string=as.factor(x.traindum_smote$ch_in_string)
+  x.traindum=x.traindum_smote
+  rm(x.traindum_smote)
+}
+temp=table(x.traindum[,"ch_in_string"])
+print(temp)
+
+############ Data for Heuristic machine learning methods
+# normalize data (very important for ML techniques, but not for logistic regression)
+x.trainnorm=predict(preProcess(x.traindum, method = "range"), newdata=x.traindum)
+x.evaluatenorm=predict(preProcess(x.evaluatedum, method = "range"), newdata=x.evaluatedum)
+
+# adjust Baseformulea to the dummy version of the data
+varsin_dum=varsin[1:2]
+for(i in 3:length(varsin)){
+  if(!is.null(levels(x[,varsin[i]]))){
+    for(j in 2:nlevels(x[,varsin[i]])){ # first level will be considered as the base-level
+      varsin_dum=c(varsin_dum,paste(varsin[i],levels(x[,varsin[i]])[j],sep="."))
+    }
+  }else{
+    varsin_dum=c(varsin_dum,varsin[i])
+  }
+}
+
+# redo the releveling:
+x.traindum$ch_in_string=relevel(x.traindum$ch_in_string,ref="Noch_in") 
+x.evaluatedum$ch_in_string=relevel(x.evaluatedum$ch_in_string,ref="Noch_in")
+x.trainnorm$ch_in_string=relevel(x.trainnorm$ch_in_string,ref="Noch_in") 
+x.evaluatenorm$ch_in_string=relevel(x.evaluatenorm$ch_in_string,ref="Noch_in")
+
+BaseFormula_dum <- as.formula(paste0("ch_in_string~",paste(varsin_dum[-c(1,2)],collapse = "+")))
+BaseFormula1_dum <- as.formula(paste0("ch_in~",paste(varsin_dum[-c(1,2)],collapse = "+")))
+
+# set threshold probability: usually .5, but better is to set it to the portion of 1's. 
+probthres=mean(x.traindum$ch_in)
+
+
+
+
+
+################Logit regression with all variables and the whole dataset##################
+ptm <- proc.time()
+x.modelLogit <- glm(BaseFormula_dum , data = x.traindum, family = "binomial") # estimating the probability of "checkin"
+
+summary(x.modelLogit)
+
+x.evaluate$predictionlogit <- predict(x.modelLogit, newdata=x.evaluatedum, type = "response")
+x.evaluate$predictionlogitclass[x.evaluate$predictionlogit>probthres] <- "ch_in"
+x.evaluate$predictionlogitclass[x.evaluate$predictionlogit<=probthres] <- "Noch_in"
+
+x.evaluate$correctlogit <- x.evaluate$predictionlogitclass == x.evaluate$ch_in_string
+print(paste("% of predicted classifications correct", mean(x.evaluate$correctlogit)))
+LogitOutput <- makeLiftPlot(x.evaluate$predictionlogit,x.evaluate,"Logit")
+
+TimeAux <- proc.time() - ptm 
+#LogitOutput$summary=summary(x.modelLogit)
+LogitOutput$TimeElapsed <- TimeAux[3]
+LogitOutput$PercCorrect <- mean(x.evaluate$correctlogit)*100
+Logitconfmatrix <- table(x.evaluate$predictionlogitclass,x.evaluate$ch_in_string)
+rm(TimeAux)
+
+
+stargazer(x.modelLogit)
