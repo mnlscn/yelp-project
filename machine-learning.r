@@ -1,20 +1,27 @@
 # Libraries
+library(visdat)
+library(skimr)
+library(DataExplorer)
 library(corrplot)
 library(dplyr)
 library(doParallel)
 library(caret)
 library(smotefamily)
-install.packages("stargazer")
 library(stargazer) #Create a ready to use table in LaTeX style
 # https://www.r-bloggers.com/2013/01/stargazer-package-for-beautiful-latex-tables-from-r-statistical-models-output/
 library(MASS)
-
 
 setwd("/Users/manuelscionti/Desktop/Yelp/")
 source("DailyLevelData_analysis_functions.r")
 
 # Loading the dataset
 yelp_data<-read.csv("/Users/manuelscionti/Desktop/Yelp/df_complete.csv")
+
+
+# source("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/DailyLevelData_analysis_functions.r")
+# 
+# # Loading the dataset
+# yelp_data<-read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/df_complete.csv")
 
 ########## EXPLORATORY ANALYSIS ###################
 
@@ -28,21 +35,21 @@ summary(yelp_data)
 
 #Let's drop some not useful variables for our ML analysis
 yelp_data <- subset(yelp_data, select = -c(X
-                                             ,WE
-                                             ,business_id.x
-                                             ,date.x
-                                             ,bus_name
-                                             ,city
-                                             ,wifi
-                                             ,tv
-                                             ,noise
-                                             ,goodforgroups
-                                             ,outdoorseating
-                                             ,creditcardpayment
-                                             ,alcohol
-                                             ,bikeparking
-                                             ,weekdays
-                                             ,review_count.y) )
+                                           ,WE
+                                           ,business_id.x
+                                           ,date.x
+                                           ,bus_name
+                                           ,city
+                                           ,wifi
+                                           ,tv
+                                           ,noise
+                                           ,goodforgroups
+                                           ,outdoorseating
+                                           ,creditcardpayment
+                                           ,alcohol
+                                           ,bikeparking
+                                           ,weekdays
+                                           ,review_count.y) )
 
 yelp_data$ch_in_string[yelp_data$ch_in>=1]="ch_in"
 yelp_data$ch_in_string[yelp_data$ch_in==0]="Noch_in"
@@ -57,17 +64,32 @@ yelp_data$Quarter <- factor(yelp_data$Quarter)
 yelp_data$business_open=factor(yelp_data$business_open)
 yelp_data$business_open <- as.numeric(yelp_data$business_open)-1
 
+#Create Male/Female ratio tips
+yelp_data$male_to_female_tips_ratio = (yelp_data$male + 1)/(yelp_data$female+ 1)
+#Create Male/Female ratio reviews
+yelp_data$male_to_female_review_ratio = (yelp_data$num_male + 1) / (yelp_data$num_female + 1)
+#Drop the now unimportant columns with the absolute numbers of male and female contributers
+yelp_data <- subset(yelp_data, select = -c(male, female, num_male, num_female))
+
+# Rename the "stars" column to "avg_tips_stars"
+colnames(yelp_data)[colnames(yelp_data) == "stars"] <- "avg_tips_stars"
+
+# Rename the "avg_stars" column to "avg_review_stars"
+colnames(yelp_data)[colnames(yelp_data) == "avg_stars"] <- "avg_review_stars"
+
+# Rename the "review_count.x" column to "avg_review_stars"
+colnames(yelp_data)[colnames(yelp_data) == "review_count.x"] <- "cum_n_review"
 
 str(yelp_data)
 View(yelp_data)
 
 physical_attr <- c("ch_in","business_price", "business_open", "business_park","business_cat"
                    ,"wifi_dummy","tv_dummy","bikeparking_dummy","goodforgroups_dummy"
-                   ,"outdoorseating_dummy","creditcardpayment_dummy","noise_level","alcohol_dummy","n_photo")
+                   ,"outdoorseating_dummy","creditcardpayment_dummy","noise_level","alcohol_dummy")
 
 social_attr <- c("ch_in","cum_n_tips","cum_max_friends","cum_max_u_elite","cum_max_us_fans","cum_max_us_tip"
-                ,"stars","review_count.x","avg_sentiment_score_review","sum_elite_status","max_friends_count"
-                ,"male","female","sum_fans","avg_stars","num_male","num_female")
+                 ,"avg_tips_stars","cum_n_review","avg_sentiment_score_review","sum_elite_status","max_friends_count"
+                 ,"male_to_female_tips_ratio","sum_fans","avg_review_stars","male_to_female_review_ratio","n_photo")
 
 external_attr <- c("ch_in","business_lat","business_long","PRCP","SNOW","SNWD","TMAX",
                    "TMIN","TOBS","TOBS_1","TOBS_2","TOBS_3","TOBS_4","Quarter","weekend")
@@ -77,10 +99,11 @@ yelp_data_social=subset(yelp_data,select=social_attr)
 yelp_data_external=subset(yelp_data,select=external_attr)
 
 
+
 #LaTeX tables - output must be copied in a LaTeX editor (Overleaf)
-stargazer(yelp_data_physical)
-stargazer(yelp_data_social)
-stargazer(yelp_data_external)
+stargazer(yelp_data_physical, median = T)
+stargazer(yelp_data_social, median = T)
+stargazer(yelp_data_external, median = T)
 
 
 
@@ -120,29 +143,30 @@ corrplot(correlation.matrix, method="color", type="upper",tl.col = "black",)
 
 
 ####### STEPWISE VARIABLE SELECTION ########
+
 # It takes a lot of time. Be careful
 
 library(MASS)
 
-# Specify your initial full model with all potential predictor variables
-full_model <- glm(ch_in~.-ch_in_string, data = yelp_data, family = binomial)
-
-# Perform stepwise variable selection using AIC
-stepwise_model <- stepAIC(full_model, direction = "both")
-
-# View the selected variables in the final model
-selected_variables <- stepwise_model$anova$terms
-print(selected_variables)
+# # Specify your initial full model with all potential predictor variables
+# full_model <- glm(ch_in~.-ch_in_string, data = yelp_data, family = binomial)
+# 
+# # Perform stepwise variable selection using AIC
+# stepwise_model <- stepAIC(full_model, direction = "both")
+# 
+# # View the selected variables in the final model
+# print(stepwise_model)
 
 
 # A simple regression analysis ----
+
 # Just to do diagnostic
 
-m1=glm(ch_in~cum_n_tips+cum_max_friends+cum_max_us_fans+cum_max_us_tip+I((male+1)/(female+1))+
-         business_price+business_park+business_open+business_cat+n_photo+
-         PRCP+SNOW+SNWD+TMAX+TMIN+TOBS_3+Quarter+weekend, data = yelp_data, family = "binomial")
-car::vif(m1)
-summary(m1)
+#m1=glm(ch_in~cum_n_tips+cum_max_friends+cum_max_us_fans+cum_max_us_tip+I((male+1)/(female+1))+
+ #        business_price+business_park+business_open+business_cat+n_photo+
+  #       PRCP+SNOW+SNWD+TMAX+TMIN+TOBS_3+Quarter+weekend, data = yelp_data, family = "binomial")
+#::vif(m1)
+#summary(m1)
 
 
 
@@ -150,12 +174,42 @@ summary(m1)
 # Split randomly
 set.seed(66)
 yelp_data_na=yelp_data
-# list of variables in your model
-varsin=c("ch_in_string","ch_in","SNWD","Quarter","business_price","business_open","business_cat","business_park","TOBS","PRCP","n_photo","female","male","cum_n_tips","cum_max_friends","cum_max_u_elite","cum_max_us_fans","cum_max_us_tip","weekend")
+# list of variables in your model, choose variables with reasoning
+#varsin=c("ch_in_string","ch_in","SNWD","Quarter","business_price","business_open","business_cat","business_park","TOBS","PRCP","n_photo","female","male","cum_n_tips","cum_max_friends","cum_max_u_elite","cum_max_us_fans","cum_max_us_tip","weekend")
+#We select only the parameters given by the stepwise model. This way we reduce the dimension of our model without and increase the calculation
+#speed without losing too much valuable information
+
+varsin = c("ch_in_string","ch_in", "business_open", "business_park","business_cat"
+           ,"wifi_dummy","goodforgroups_dummy"
+           ,"outdoorseating_dummy","creditcardpayment_dummy","n_photo"
+           ,"cum_n_tips"
+           ,"avg_tips_stars","cum_n_review"
+           ,"male_to_female_tips_ratio"
+           ,"business_lat","business_long","TOBS_3","TOBS_4","Quarter","weekend")
+
+yelp_data_used_vars=subset(yelp_data,select=varsin)
+
+
+#LaTeX tables - output must be copied in a LaTeX editor (Overleaf)
+stargazer(yelp_data_used_vars, median = T)
+
+
+
+yelp_data_AIC=subset(yelp_data,select=varsin)
+stargazer(yelp_data_AIC)
+#varsin = c("ch_in_string","ch_in","business_price", "business_open", "business_park","business_cat"
+ #          ,"wifi_dummy","tv_dummy","bikeparking_dummy","goodforgroups_dummy"
+  #         ,"outdoorseating_dummy","creditcardpayment_dummy","noise_level","alcohol_dummy","n_photo"
+   #        ,"cum_n_tips","cum_max_friends","cum_max_u_elite","cum_max_us_fans","cum_max_us_tip"
+    #       ,"stars","review_count.x","avg_sentiment_score_review","sum_elite_status","max_friends_count"
+     #      ,"male_to_female_tips_ratio","sum_fans","avg_stars","male_to_female_review_ratio"
+      #     ,"business_lat","business_long","PRCP","SNOW","SNWD","TMAX"
+       #    ,"TMIN","TOBS","TOBS_1","TOBS_2","TOBS_3","TOBS_4","Quarter","weekend")
+
 yelp_data=subset(yelp_data,select=varsin)
 
 # set "/1" for full dataset size
-datasetsize=nrow(yelp_data)/1 # would you like to work only  on a subset of your data? 
+datasetsize=nrow(yelp_data)/20 # would you like to work only  on a subset of your data? 
 x <- yelp_data[sample(1:nrow(yelp_data), datasetsize, replace = F),]
 x.train <- x[1:floor(nrow(x)*.75), ]
 x.evaluate <- x[(floor(nrow(x)*.75)+1):nrow(x), ]
@@ -545,9 +599,6 @@ rm(TimeAux)
 stopCluster(cl)
 
 
-
- 
-
 # SOME Summarizing plots:
 
 OverallTDL <- c(LogitOutput$TDL,SVMOutput$TDL,TreeOutput$TDL,BaggingOutput$TDL,BoostingOutput$TDL,RFOutput$TDL,NNetOutput$TDL)
@@ -597,70 +648,388 @@ lift_obj=lift(ch_in_string~predictionBagging+predictionBoosting+predictionTree+p
 
 ggplot(lift_obj)
 
+#stargazer(x.modelLogit,x.modelNB,x.modelKNN, title='comparison', align =TRUE)
 
+####### MODEL TUNING ####### (WORK IN PROGRESS) Half var, half obs -> SVM performes best -> tune SVM
 
+########## Neural network
 
-####### TUNING RF - BEST MODEL #######
+library(doParallel)
 cl <- makeCluster(detectCores())
 registerDoParallel(cl)
 
+library(NeuralNetTools) # required for plotting
 
-paramGrid <- expand.grid(
-  mtry = c(2, 4, 6, 8),       # Number of variables selected at each node
-  ntree = c(100, 500, 1000, 15000) # Number of trees in the forest
-)
-
-ptm <- proc.time()
-
-# Perform hyperparameter tuning using tuneRF() function
-x.modelRF_tuned <- tuneRF(
-  subset(x.trainnorm, select = -ch_in),   # Training predictors (excluding the target variable)
-  y = x.trainnorm[["ch_in"]],             # Training target variable
-  mtryStart = 2,                          # Starting value of mtry
-  stepFactor = 2,                         # Step factor for mtry
-  improve = 0.01,                         # Minimum improvement in node purity
-  ntreeTry = 2,             # Number of trees to try
-  doBest = TRUE,                          # Choose the best model
-  importance = TRUE                       # Compute variable importance
-)
-
-best_mtry <- x.modelRF_tuned$mtry
-best_ntree <- x.modelRF_tuned$ntree
+# Define the range of layer combinations to loop through
+layer1_values <- c(4,8,12,16)
+layer2_values <- c(0,4,8)
+layer3_values <- c(0,4)
 
 
-# Create a model using "random forest and bagging ensemble algorithms
-# a fast trainer using parallel computation
-x.modelRF <- train(BaseFormula_dum, data=x.trainnorm, method="parRF", mtry=best_mtry, ntree=best_ntree) 
+# Create an empty data frame to store the results
+results <- data.frame(layer1 = integer(),
+                      layer2 = integer(),
+                      layer3 = integer(),
+                      GINI_coefficient = numeric(),
+                      TDL = numeric(),
+                      calculation_time = numeric(),
+                      percentage_correct_hits = numeric())
 
-# Use the model to predict the evaluation.
-x.evaluate$predictionRF <- predict(x.modelRF, newdata=x.evaluatenorm, type = "prob")
+# Loop through different layer combinations
+for (layer1 in layer1_values) {
+  for (layer2 in layer2_values) {
+    for (layer3 in layer3_values) {
+      set.seed(66)
+      ptm <- proc.time()
+      # Create the tuning grid for MLP
+      mlp_grid <- expand.grid(layer1 = layer1,
+                              layer2 = layer2,
+                              layer3 = layer3)
+      
+      x.modelNNet <- train(BaseFormula_dum, data=x.trainnorm, method='mlpML',tuneGrid=mlp_grid) 
+      
+      x.evaluate$predictionNNet <- predict(x.modelNNet, newdata = x.evaluatenorm, type="prob")
+      
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]>probthres]="ch_in"
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]<=probthres]="Noch_in"
+      
+      
+      x.evaluate$correctNNet <- x.evaluate$predictionNNetclass == x.evaluate$ch_in_string
+      print(paste("% of predicted classifications correct", mean(x.evaluate$correctNNet)))
+      
+      imp_NNet<- (varImp(x.modelNNet))
+      plot(imp_NNet, main="NNet MODEL")
+      
+      # plot NNet
+      if(0){
+        NeuralNetTools::plotnet(x.modelNNet$finalModel)
+      }
+      x.evaluate$predictionNNet <- x.evaluate$predictionNNet[,"ch_in"]
+      
+      NNetOutput <- makeLiftPlot(x.evaluate$predictionNNet,x.evaluate,"Neural Network")
+      
+      TimeAux <- proc.time() - ptm 
+      #NNetOutput$summary=varImp(x.modelNNet)
+      NNetOutput$TimeElapsed <- TimeAux[3]
+      NNetOutput$PercCorrect <- mean(x.evaluate$correctNNet)*100
+      NNetconfmatrix <- table(x.evaluate$predictionNNetclass,x.evaluate$ch_in_string)
+      rm(TimeAux)
+      
+      
+      GINI_coefficient <- NNetOutput$GINI
+      TDL <- NNetOutput$TDL
+      calculation_time <- NNetOutput$TimeElapsed
+      percentage_correct_hits <- NNetOutput$PercCorrect
+      
+      # Append the results to the data frame
+      results <- rbind(results, data.frame(layer1 = layer1,
+                                           layer2 = layer2,
+                                           layer3 = layer3,
+                                           GINI_coefficient = GINI_coefficient,
+                                           TDL = TDL,
+                                           calculation_time = calculation_time,
+                                           percentage_correct_hits = percentage_correct_hits))
+    }
+  }
+}
 
-x.evaluate$predictionRFClass[x.evaluate$predictionRF[,"ch_in"]>probthres]="ch_in"
-x.evaluate$predictionRFClass[x.evaluate$predictionRF[,"ch_in"]<=probthres]="Noch_in"
-
-x.evaluate$predictionRFClass <- factor(x.evaluate$predictionRFClass, levels=c("Noch_in","ch_in"))
-
-
-# Calculate the overall accuracy.
-x.evaluate$correctRF <- x.evaluate$predictionRFClass == x.evaluate$ch_in_string
-print(paste("% of predicted classifications correct", mean(x.evaluate$correctRF)))
-
-# Extract the class probabilities.
-x.evaluate$predictionRF <- x.evaluate$predictionRF[,"ch_in"]
-
-# to see the importance of the variables
-imp_RF <- (varImp(x.modelRF))
-plot(imp_RF, main="RANDOM FOREST MODEL")
-
-RFOutput <- makeLiftPlot(x.evaluate$predictionRF,x.evaluate,"Random Forest")
-
-TimeAux <- proc.time() - ptm 
-#RFOutput$summary <- varImp(x.modelRF)
-RFOutput$TimeElapsed <- TimeAux[3]
-RFOutput$PercCorrect <- mean(x.evaluate$correctRF)*100
-RFconfmatrix <- table(x.evaluate$predictionRFClass,x.evaluate$ch_in_string)
-rm(TimeAux)
+# Stop the cluster
 stopCluster(cl)
 
+# Print the results
+print(results)
+write.csv(results, file = "C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v1.csv", row.names = FALSE)
+
+########## Neural network
+
+library(doParallel)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+library(NeuralNetTools) # required for plotting
+
+# Define the range of layer combinations to loop through
+layer1_values <- c(16,32)
+layer2_values <- c(0,2,4)
+layer3_values <- c(0,1,2)
 
 
+# Create an empty data frame to store the results
+results <- data.frame(layer1 = integer(),
+                      layer2 = integer(),
+                      layer3 = integer(),
+                      GINI_coefficient = numeric(),
+                      TDL = numeric(),
+                      calculation_time = numeric(),
+                      percentage_correct_hits = numeric())
+
+# Loop through different layer combinations
+for (layer1 in layer1_values) {
+  for (layer2 in layer2_values) {
+    for (layer3 in layer3_values) {
+      set.seed(66)
+      ptm <- proc.time()
+      # Create the tuning grid for MLP
+      mlp_grid <- expand.grid(layer1 = layer1,
+                              layer2 = layer2,
+                              layer3 = layer3)
+      
+      x.modelNNet <- train(BaseFormula_dum, data=x.trainnorm, method='mlpML',tuneGrid=mlp_grid) 
+      
+      x.evaluate$predictionNNet <- predict(x.modelNNet, newdata = x.evaluatenorm, type="prob")
+      
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]>probthres]="ch_in"
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]<=probthres]="Noch_in"
+      
+      
+      x.evaluate$correctNNet <- x.evaluate$predictionNNetclass == x.evaluate$ch_in_string
+      print(paste("% of predicted classifications correct", mean(x.evaluate$correctNNet)))
+      
+      imp_NNet<- (varImp(x.modelNNet))
+      plot(imp_NNet, main="NNet MODEL")
+      
+      # plot NNet
+      if(0){
+        NeuralNetTools::plotnet(x.modelNNet$finalModel)
+      }
+      x.evaluate$predictionNNet <- x.evaluate$predictionNNet[,"ch_in"]
+      
+      NNetOutput <- makeLiftPlot(x.evaluate$predictionNNet,x.evaluate,"Neural Network")
+      
+      TimeAux <- proc.time() - ptm 
+      #NNetOutput$summary=varImp(x.modelNNet)
+      NNetOutput$TimeElapsed <- TimeAux[3]
+      NNetOutput$PercCorrect <- mean(x.evaluate$correctNNet)*100
+      NNetconfmatrix <- table(x.evaluate$predictionNNetclass,x.evaluate$ch_in_string)
+      rm(TimeAux)
+      
+      
+      GINI_coefficient <- NNetOutput$GINI
+      TDL <- NNetOutput$TDL
+      calculation_time <- NNetOutput$TimeElapsed
+      percentage_correct_hits <- NNetOutput$PercCorrect
+      
+      # Append the results to the data frame
+      results <- rbind(results, data.frame(layer1 = layer1,
+                                           layer2 = layer2,
+                                           layer3 = layer3,
+                                           GINI_coefficient = GINI_coefficient,
+                                           TDL = TDL,
+                                           calculation_time = calculation_time,
+                                           percentage_correct_hits = percentage_correct_hits))
+    }
+  }
+}
+
+# Stop the cluster
+stopCluster(cl)
+
+# Print the results
+print(results)
+write.csv(results, file = "C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v2.csv", row.names = FALSE)
+
+tuning_v1 = read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v1.csv")
+tuning_v2 = read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v2.csv")
+
+tuning_complete = rbind(tuning_v1, tuning_v2)
+tuning_subset = tuning_complete[tuning_complete$GINI > 0.7 & tuning_complete$TDL > 4, ]
+stargazer(tuning_complete, summary =F)
+#To decide on the tuning parameter, we only look at combinations with GINI coefficients above 0.7 and a TDL
+#above 4. Now we look at the increase in time compared to the increase in accuracy. The highest accuracy 
+#corresponds to a time increase from the second highest accuracy of + 50% but only a slight increase of
+#0.7 pp in accuracy while losing in TDL and GINI. We now test which of the combinations lead to the best
+#results after running it a few times. We decide to use the 32,0,0 combination since it is more consistent
+
+########## Neural network
+
+library(doParallel)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+library(NeuralNetTools) # required for plotting
+
+# Define the range of layer combinations to loop through
+layer1_values <- c(32,32,32,32,32,32,32,32,32,32)
+layer2_values <- c(0)
+layer3_values <- c(0)
+
+
+# Create an empty data frame to store the results
+results <- data.frame(layer1 = integer(),
+                      layer2 = integer(),
+                      layer3 = integer(),
+                      GINI_coefficient = numeric(),
+                      TDL = numeric(),
+                      calculation_time = numeric(),
+                      percentage_correct_hits = numeric())
+
+# Loop through different layer combinations
+for (layer1 in layer1_values) {
+  for (layer2 in layer2_values) {
+    for (layer3 in layer3_values) {
+      ptm <- proc.time()
+      # Create the tuning grid for MLP
+      mlp_grid <- expand.grid(layer1 = layer1,
+                              layer2 = layer2,
+                              layer3 = layer3)
+      
+      x.modelNNet <- train(BaseFormula_dum, data=x.trainnorm, method='mlpML',tuneGrid=mlp_grid) 
+      
+      x.evaluate$predictionNNet <- predict(x.modelNNet, newdata = x.evaluatenorm, type="prob")
+      
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]>probthres]="ch_in"
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]<=probthres]="Noch_in"
+      
+      
+      x.evaluate$correctNNet <- x.evaluate$predictionNNetclass == x.evaluate$ch_in_string
+      print(paste("% of predicted classifications correct", mean(x.evaluate$correctNNet)))
+      
+      imp_NNet<- (varImp(x.modelNNet))
+      plot(imp_NNet, main="NNet MODEL")
+      
+      # plot NNet
+      if(0){
+        NeuralNetTools::plotnet(x.modelNNet$finalModel)
+      }
+      x.evaluate$predictionNNet <- x.evaluate$predictionNNet[,"ch_in"]
+      
+      NNetOutput <- makeLiftPlot(x.evaluate$predictionNNet,x.evaluate,"Neural Network")
+      
+      TimeAux <- proc.time() - ptm 
+      #NNetOutput$summary=varImp(x.modelNNet)
+      NNetOutput$TimeElapsed <- TimeAux[3]
+      NNetOutput$PercCorrect <- mean(x.evaluate$correctNNet)*100
+      NNetconfmatrix <- table(x.evaluate$predictionNNetclass,x.evaluate$ch_in_string)
+      rm(TimeAux)
+      
+      
+      GINI_coefficient <- NNetOutput$GINI
+      TDL <- NNetOutput$TDL
+      calculation_time <- NNetOutput$TimeElapsed
+      percentage_correct_hits <- NNetOutput$PercCorrect
+      
+      # Append the results to the data frame
+      results <- rbind(results, data.frame(layer1 = layer1,
+                                           layer2 = layer2,
+                                           layer3 = layer3,
+                                           GINI_coefficient = GINI_coefficient,
+                                           TDL = TDL,
+                                           calculation_time = calculation_time,
+                                           percentage_correct_hits = percentage_correct_hits))
+    }
+  }
+}
+
+# Stop the cluster
+stopCluster(cl)
+
+# Print the results
+print(results)
+write.csv(results, file = "C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v3.csv", row.names = FALSE)
+
+
+########## Neural network
+
+library(doParallel)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+library(NeuralNetTools) # required for plotting
+
+# Define the range of layer combinations to loop through
+layer1_values <- c(16,16,16,16,16,16,16,16,16,16)
+layer2_values <- c(4)
+layer3_values <- c(0)
+
+
+# Create an empty data frame to store the results
+results <- data.frame(layer1 = integer(),
+                      layer2 = integer(),
+                      layer3 = integer(),
+                      GINI_coefficient = numeric(),
+                      TDL = numeric(),
+                      calculation_time = numeric(),
+                      percentage_correct_hits = numeric())
+
+# Loop through different layer combinations
+for (layer1 in layer1_values) {
+  for (layer2 in layer2_values) {
+    for (layer3 in layer3_values) {
+      ptm <- proc.time()
+      # Create the tuning grid for MLP
+      mlp_grid <- expand.grid(layer1 = layer1,
+                              layer2 = layer2,
+                              layer3 = layer3)
+      
+      x.modelNNet <- train(BaseFormula_dum, data=x.trainnorm, method='mlpML',tuneGrid=mlp_grid) 
+      
+      x.evaluate$predictionNNet <- predict(x.modelNNet, newdata = x.evaluatenorm, type="prob")
+      
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]>probthres]="ch_in"
+      x.evaluate$predictionNNetclass[x.evaluate$predictionNNet[,"ch_in"]<=probthres]="Noch_in"
+      
+      
+      x.evaluate$correctNNet <- x.evaluate$predictionNNetclass == x.evaluate$ch_in_string
+      print(paste("% of predicted classifications correct", mean(x.evaluate$correctNNet)))
+      
+      imp_NNet<- (varImp(x.modelNNet))
+      plot(imp_NNet, main="NNet MODEL")
+      
+      # plot NNet
+      if(0){
+        NeuralNetTools::plotnet(x.modelNNet$finalModel)
+      }
+      x.evaluate$predictionNNet <- x.evaluate$predictionNNet[,"ch_in"]
+      
+      NNetOutput <- makeLiftPlot(x.evaluate$predictionNNet,x.evaluate,"Neural Network")
+      
+      TimeAux <- proc.time() - ptm 
+      #NNetOutput$summary=varImp(x.modelNNet)
+      NNetOutput$TimeElapsed <- TimeAux[3]
+      NNetOutput$PercCorrect <- mean(x.evaluate$correctNNet)*100
+      NNetconfmatrix <- table(x.evaluate$predictionNNetclass,x.evaluate$ch_in_string)
+      rm(TimeAux)
+      
+      
+      GINI_coefficient <- NNetOutput$GINI
+      TDL <- NNetOutput$TDL
+      calculation_time <- NNetOutput$TimeElapsed
+      percentage_correct_hits <- NNetOutput$PercCorrect
+      
+      # Append the results to the data frame
+      results <- rbind(results, data.frame(layer1 = layer1,
+                                           layer2 = layer2,
+                                           layer3 = layer3,
+                                           GINI_coefficient = GINI_coefficient,
+                                           TDL = TDL,
+                                           calculation_time = calculation_time,
+                                           percentage_correct_hits = percentage_correct_hits))
+    }
+  }
+}
+
+# Stop the cluster
+stopCluster(cl)
+
+# Print the results
+print(results)
+write.csv(results, file = "/Users/manuelscionti/Desktop/Yelp/tuning_v4.csv", row.names = FALSE)
+
+
+tuning_v3 = read.csv("/Users/manuelscionti/Desktop/Yelp/tuning_v3.csv")
+tuning_v4 = read.csv("/Users/manuelscionti/Desktop/Yelp/tuning_v4.csv")
+
+
+stargazer(tuning_v3, median = T) #higher gini, tdl and hitrate -> 32 layers
+stargazer(tuning_v4, median = T) 
+
+install.packages("pdp")
+library(pdp)
+
+partial(x.modelNNet, pred.var = "cum_n_review", plot = T, levelplot = TRUE, plot.lines = TRUE)
+
+partial(x.modelNNet, pred.var = "cum_n_tips", plot = T, levelplot = TRUE, plot.lines = TRUE)
+
+partial(x.modelNNet, pred.var = "avg_tips_stars",  plot = T, levelplot = TRUE)
+
+partial(x.modelNNet, pred.var = "n_photo",  plot = T, levelplot = TRUE)
