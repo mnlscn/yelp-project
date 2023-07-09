@@ -1,7 +1,5 @@
-# First we extract data from public. City of Akron period 2017.
+# First we extract data from public. City of Akron period 2018.
 
-1) SQL code
-2) R code?
 
 ##########################################################################################
 -- 1) SQL CODE - Extraction data from public 
