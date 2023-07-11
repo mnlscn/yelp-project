@@ -218,7 +218,7 @@ WHERE t_bp.business_id = t_ruc.business_id;
 
 
 ##########################################################################################
-3) R code to extract weather data
+2) R code to extract weather data
 ##########################################################################################
 
 extractweather=function(mindate=min(dataset$date),maxdate=max(dataset$date),
@@ -339,7 +339,7 @@ weatherdaily=weardailyavg(weather)
 
 
 ##########################################################################################
-4) Supplementary code for deploying
+3) Supplementary code for deploying
 ##########################################################################################
 
 # deploy of the functions used for the analysis
@@ -483,7 +483,7 @@ makeLiftPlot <- function(Prediction, Evaluate, ModelName){
 }
 
 ##########################################################################################
-5) DailyLevelData_tips_v1.R -- This code deals with missings and irregularities for Akron data.
+4) DailyLevelData_tips_v1.R -- This code deals with missings and irregularities for Akron data.
 ##########################################################################################
 
 rm(list = ls()) #clear workspace
@@ -491,8 +491,7 @@ rm(list = ls()) #clear workspace
 library(Hmisc)
 library(dplyr)
 
-#setwd("H:\\Dropbox\\Dropbox\\Frankfurt Courses\\Data Science\\2021-22\\Termpaper") #set working directory
-setwd("/home/rstudio1/Dropbox/Frankfurt Courses/Data Science/2022/Termpaper")
+
 DailyLevel_data <- read.csv("tips_2018-01-01-2018-11-14-Akron_data.csv",header=TRUE, na.strings="NA") #read csv file. Be aware of the parameters, such as the string for NA's. Usually either "" or "\\NA".
 cum_u_names=DailyLevel_data$cum_u_names
 Nobs=length(cum_u_names)
@@ -604,13 +603,13 @@ describe(DailyLevel_data)
 
 
 #the complete data sets can be used to estimate your model of choice
-#and the results of all 5 models can be combined as in the earlier example
+#and the results of all 5 models can be combined.
 write.csv(DailyLevel_data, file="DailyLevel_data_tip_Imputed.csv")
 
 
 
 ##########################################################################################
-6) DailyLevelData_tips_v2.r -- Reads in the imputed data from DailyLevelData_tips_v1.R and joins it with weather data.
+5) DailyLevelData_tips_v2.r -- Reads in the imputed data from DailyLevelData_tips_v1.R and joins it with weather data.
 ##########################################################################################
 
 rm(list = ls()) #clear workspace
@@ -619,8 +618,6 @@ library(doParallel)
 library(caret)
 library(smotefamily)
 
-setwd("/home/rstudio1/Dropbox/Frankfurt Courses/Data Science/2022/Termpaper")
-#setwd("~/R/dropbox/Frankfurt Courses/Data Science/Termpaper") #set working directory
 
 source("DailyLevelData_analysis_functions.r")
 
@@ -737,11 +734,9 @@ car::vif(m1)
 summary(m1)
 
 ##########################################################################################
-7) SQL table extraction -- Business table, Review table, Attributes table
+6) SQL table extraction -- Business table, Review table, Attributes table
 ##########################################################################################
 
-Impossibile creare, modificare o caricare file … Non hai spazio di archiviazione sufficiente per creare, modificare e caricare file. Ottieni 100 GB di spazio di archiviazione a 1,99 € 0,49 € per 1 mese.
-SQLQuery.txt
 #####Review data with user data (RTAkr)####
 SELECT 
     rev.j ->> 'date' AS date,
@@ -823,7 +818,7 @@ rtA['sentiment_score_review'] = rtA['review'].apply(lambda x: x.sentiment.polari
 rtA.to_csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/RTAKr_with_sentiment.csv")
 
 ##########################################################################################
-7) R code -- Yelp_dataset_creation
+8) R code -- Yelp_dataset_creation
 ##########################################################################################
 library(readr)
 library(gender)
@@ -960,7 +955,7 @@ write.csv(df_complete, "C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/df_com
 
 
 ##########################################################################################
-7) Exploratory Analysis & Preprocessing & Machine Learning
+9) Exploratory Analysis & Preprocessing & Machine Learning
 ##########################################################################################
 
 # Libraries
@@ -1614,7 +1609,7 @@ ggplot(lift_obj)
 
 #stargazer(x.modelLogit,x.modelNB,x.modelKNN, title='comparison', align =TRUE)
 
-####### MODEL TUNING ####### (WORK IN PROGRESS) Half var, half obs -> SVM performes best -> tune SVM
+####### MODEL TUNING #######  
 
 ########## Neural network
 
@@ -1798,6 +1793,7 @@ tuning_v2 = read.csv("C:/Users/jaspe/OneDrive/Master SoSe 23/DAMA/Final/tuning_v
 tuning_complete = rbind(tuning_v1, tuning_v2)
 tuning_subset = tuning_complete[tuning_complete$GINI > 0.7 & tuning_complete$TDL > 4, ]
 stargazer(tuning_complete, summary =F)
+
 #To decide on the tuning parameter, we only look at combinations with GINI coefficients above 0.7 and a TDL
 #above 4. Now we look at the increase in time compared to the increase in accuracy. The highest accuracy 
 #corresponds to a time increase from the second highest accuracy of + 50% but only a slight increase of
