@@ -1,0 +1,3 @@
+# Unlocking Insights: Machine Learning Analysis of Yelp Data for Check-In Predictions
+
+This research paper explores and predicts customer check-in behavior using the Yelp Open Dataset. Leveraging ma- chine learning models and fine-tuning a neural network, we achieve accurate check-in predictions. Valuable marketing insights are extracted, including peak check-in hours, influential factors, and location-specific trends. These insights enable businesses to optimize operations, enhance customer engagement, and attract more check-ins. By leveraging data analytics, businesses gain a competitive edge and efectively meet customer needs.
